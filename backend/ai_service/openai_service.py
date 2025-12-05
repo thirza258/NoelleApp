@@ -8,7 +8,6 @@ import logging
 try:
     from noelle_settings.settings import OPENAI_API_KEY
 except ImportError:
-    # Fallback for demonstration if the settings file is not available
     import os
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE")
     if OPENAI_API_KEY == "YOUR_OPENAI_API_KEY_HERE":
@@ -81,7 +80,7 @@ def generate_response(
 
         # 6. Convert the Pydantic model response to a JSON string to match
         # the original function's return type.
-        return response_model.model_dump_json()
+        return response_model.model_dump()
 
     except Exception as e:
         logger.error(f"An error occurred during LangChain OpenAI API call: {e}")

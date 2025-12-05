@@ -1,12 +1,14 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.helper import strip_authentication_header
 from core.models import ChatRecord
 from ai_service.openai_service import generate_response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
+from common.response_definer import response_200, response_500, response_400, response_401, response_201
+from ai_service.prompt_builder import PromptBuilder
 
+prompt_builder = PromptBuilder()
 
 
 class SummarizerView(APIView):
@@ -28,27 +30,17 @@ class SummarizerView(APIView):
         prompt = request.data.get("prompt")
 
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
 
         try:
-            system_instruction_string = f"""You are a highly skilled summarizer. Your task is to distill complex information into clear and concise insights."""
+            system_instruction_string = prompt_builder.summarizer_system_instruction()
 
-            response_data = generate_response(prompt=prompt, api_key=api_key, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='summarizer', prompt=prompt, response=response_data, api_key=api_key)
+            response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='summarizer', prompt=prompt, response=response_data)
     
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            return response_200(response_data)
         except Exception as e:
-            return Response(
-                {"error": "An unexpected error occurred while processing your request."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 class WriterView(APIView):
     """
@@ -64,32 +56,19 @@ class WriterView(APIView):
         returning a consistent API response format.
         """
         prompt = request.data.get("prompt")
-        api_key = request.headers.get('Authorization')
-        api_key = strip_authentication_header(api_key)
         
         if not prompt:
            
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
 
         try:
-            system_instruction_string = f"""You are an expert writer. Your goal is to create original, engaging, and high-quality text based on the user's prompt."""
-            response_data = generate_response(prompt=prompt, api_key=api_key, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='writer', prompt=prompt, response=response_data, api_key=api_key)
+            system_instruction_string = prompt_builder.writer_system_instruction()
+            response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='writer', prompt=prompt, response=response_data)
        
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": {"written_text": response_data}
-            }, status=status.HTTP_200_OK)
+            return response_200(response_data)
         except Exception as e:
-           
-            return Response(
-                {"error": "An unexpected error occurred while processing your request."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )   
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 class RewriterView(APIView):
     """
@@ -105,32 +84,19 @@ class RewriterView(APIView):
         returning a consistent API response format.
         """
         prompt = request.data.get("prompt")
-        api_key = request.headers.get('Authorization')
-        api_key = strip_authentication_header(api_key)
         
         if not prompt:
-           
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
 
         try:
-            system_instruction_string = f"""You are a skilled rewriter. Your task is to rewrite the given text in a way that is more engaging and persuasive."""
-            response_data = generate_response(prompt=prompt, api_key=api_key, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='rewriter', prompt=prompt, response=response_data, api_key=api_key)
+            system_instruction_string = prompt_builder.rewriter_system_instruction()
+            response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='rewriter', prompt=prompt, response=response_data)
           
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": {"rewritten_text": response_data}
-            }, status=status.HTTP_200_OK)
+            return response_200(response_data)
         except Exception as e:
            
-            return Response(
-                {"error": "An unexpected error occurred while processing your request."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 class EmailGeneratorView(APIView):
     """
@@ -147,52 +113,18 @@ class EmailGeneratorView(APIView):
         prompt = request.data.get("prompt")
 
     
-        prompt = f"""
-            You are a skilled email generator. Your task is to generate an email from a text prompt.
-            The email should be generated based on the following context:
-            {context}
-            The recipients of the email are:
-            {recipients}
-            The sender of the email is:
-            {sender}
-            The email should be generated based on the following prompt:
-            {prompt}
-        """
-
-        system_instruction_string = f"""
-        You are a skilled email generator. Your task is to generate an email from a text prompt.
-        """
+        prompt, system_instruction_string = prompt_builder.email_builder_prompt(context, recipients, sender, prompt)
         if not prompt:
-            return Response(
-                {"error": "A 'context' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'context' is required in the request body.")
         if not recipients:
-            return Response(
-                {"error": "A 'recipients' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'recipients' is required in the request body.")
         if not sender:
-            return Response(
-                {"error": "A 'sender' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'sender' is required in the request body.")
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
         try:
             response_data = generate_response(prompt=prompt,  system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='email_generation', prompt=prompt, response=response_data, api_key=api_key)
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            ChatRecord.objects.create(method='email_generation', prompt=prompt, response=response_data)
+            return response_200(response_data)
         except Exception as e:
-            return Response({
-                "status": 500,
-                "message": "error",
-                "data": "An unexpected error occurred while processing your request." + str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return response_500("An unexpected error occurred while processing your request." + str(e))

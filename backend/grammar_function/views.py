@@ -1,4 +1,15 @@
 from django.shortcuts import render
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from core.models import ChatRecord
+from ai_service.openai_service import generate_response
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from common.response_definer import response_200, response_500, response_400, response_401, response_201
+from ai_service.prompt_builder import PromptBuilder
+
+prompt_builder = PromptBuilder()
 
 # Create your views here.
 class TranslatorView(APIView):
@@ -12,32 +23,20 @@ class TranslatorView(APIView):
         prompt = request.data.get("prompt")
         target_language = request.data.get("target_language", "English")
         source_language = request.data.get("source_language", "English")
-        api_key = request.headers.get('Authorization')
-        api_key = strip_authentication_header(api_key)
         
         if not prompt:
-            return Response(
-                {"error": "Prompt is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("Prompt is required.")
 
         try:
 
-            system_instruction_string = f"""You are a professional translator. Translate the given text into {target_language} from {source_language}."""
-            translation_text = generate_response(api_key=api_key, prompt=prompt, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='translator', prompt=prompt, response=translation_text, api_key=api_key)
+            system_instruction_string = prompt_builder.translator_system_instruction(target_language, source_language)
+            translation_text = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='translator', prompt=prompt, response=translation_text)
           
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": translation_text
-            }, status=status.HTTP_200_OK)
+            return response_200(translation_text)
         
         except Exception as e:
-            return Response(
-                {"error": "An unexpected error occurred while processing your request."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 class CopyWritingView(APIView):
     """
@@ -49,34 +48,15 @@ class CopyWritingView(APIView):
         Handles POST requests to generate copywriting.
         """
         prompt = request.data.get("prompt")
-        api_key = request.headers.get('Authorization')
-        api_key = strip_authentication_header(api_key)
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if not api_key:
-            return Response(
-                {"error": "Authorization header is required."},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return response_400("A 'prompt' is required in the request body.")
         try:
-            system_instruction_string = f"""
-            You are a skilled copywriter. Your task is to create engaging and persuasive copywriting based on the user's prompt.
-            """
-            response_data = generate_response(prompt=prompt, api_key=api_key, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='copywriting', prompt=prompt, response=response_data, api_key=api_key)
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            system_instruction_string = prompt_builder.copywriting_system_instruction()
+            response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='copywriting', prompt=prompt, response=response_data)
+            return response_200(response_data)
         except Exception as e:
-            return Response(
-                {"error": "An unexpected error occurred while processing your request."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 class ProofreaderView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -85,27 +65,13 @@ class ProofreaderView(APIView):
     def post(self, request, *args, **kwargs):
         prompt = request.data.get("prompt")
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
 
         try:
-            system_instruction_string = f"""You are a proofreader.
-                     Your task is to proofread the given text and 
-                     make sure it is grammatically correct and semantically correct. 
-                     And make sure to proofread eventough the text is already perfect
-                     """
+            system_instruction_string = prompt_builder.proofreader_system_instruction()
 
             response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
             ChatRecord.objects.create(method='proofreader', prompt=prompt, response=response_data)
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            return response_200(response_data)
         except Exception as e:
-            return Response(
-                {"error": f"An unexpected error occurred while processing your request. {e}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )   
+            return response_500("An unexpected error occurred while processing your request." + str(e))

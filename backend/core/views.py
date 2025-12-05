@@ -1,13 +1,11 @@
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 import logging
-from core.helper import strip_authentication_header, extract_text_from_pdf, save_file
 from core.models import ChatRecord
-from rag_service.rag_service import RAGIndex
 from ai_service.openai_service import generate_response 
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
+from common.response_definer import response_200, response_500, response_400, response_401, response_201
+from ai_service.prompt_builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -29,30 +27,15 @@ class PromptView(APIView):
         prompt = request.data.get("prompt")
 
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
 
         try:
             response_data = generate_response(prompt=prompt)
-            ChatRecord.objects.create(method='prompt', prompt=prompt, response=response_data, api_key=api_key)
+            ChatRecord.objects.create(method='prompt', prompt=prompt, response=response_data)
             
-            return Response({
-                "status": 200,
-                "message": "success", 
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            return response_200(response_data)
         except Exception as e:
-            return Response(
-                {"error": f"An unexpected error occurred while processing your request. {e}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-
-
-
+            return response_500(f"An unexpected error occurred while processing your request. {e}")
 
 class ExplainerView(APIView):
     """
@@ -64,34 +47,16 @@ class ExplainerView(APIView):
         Handles POST requests to generate explainer.
         """
         prompt = request.data.get("prompt")
-        api_key = request.headers.get('Authorization')
-        api_key = strip_authentication_header(api_key)
+     
         if not prompt:
-            return Response(
-                {"error": "A 'prompt' is required in the request body."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return response_400("A 'prompt' is required in the request body.")
         try:
-            system_instruction_string = f"""
-            You are a skilled explainer. Your task is to explain the given prompt in a way that is easy to understand.
-            """
-            response_data = generate_response(prompt=prompt, api_key=api_key, system_instruction_string=system_instruction_string)
-            ChatRecord.objects.create(method='explainer', prompt=prompt, response=response_data, api_key=api_key)
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": response_data
-            }, status=status.HTTP_200_OK)
+            system_instruction_string = PromptBuilder.explainer_system_instruction()
+            response_data = generate_response(prompt=prompt, system_instruction_string=system_instruction_string)
+            ChatRecord.objects.create(method='explainer', prompt=prompt, response=response_data)
+            return response_200(response_data)
         except Exception as e:
-            return Response({
-                "status": 500,
-                "message": "error",
-                "data": "An unexpected error occurred while processing your request." + str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
+            return response_500("An unexpected error occurred while processing your request." + str(e))
 
 
 class HistoryView(APIView):
@@ -101,8 +66,7 @@ class HistoryView(APIView):
     def get(self, request):
         try:
             
-            api_key = strip_authentication_header(request.headers.get('Authorization'))
-            history = ChatRecord.objects.filter(api_key=api_key).order_by('-created_at')
+            history = ChatRecord.objects.order_by('-created_at')
 
             history_list = [
                 {
@@ -113,15 +77,7 @@ class HistoryView(APIView):
                 }
                 for record in history
             ]
-            return Response({
-                "status": 200,
-                "message": "success",
-                "data": history_list
-            }, status=status.HTTP_200_OK)
+            return response_200(history_list)
         except Exception as e:
-            return Response({
-                "status": 500,
-                "message": "error",
-                "data": "An unexpected error occurred while processing your request." + str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return response_500("An unexpected error occurred while processing your request." + str(e))
             

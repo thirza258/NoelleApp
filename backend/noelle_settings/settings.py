@@ -20,7 +20,7 @@ from datetime import timedelta
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "api-key-not-set")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "api-key-not-set")
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "core",
     "ai_service",
+    "grammar_function",
+    "document_function",
     "authentication",
 ]
 
