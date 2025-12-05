@@ -5,7 +5,7 @@ import services from './services/services';
 import NavBar from './components/NavBar';
 import Sidebar from './components/Sidebar';
 import AboutPage from './pages/about/AboutPage';
-import ApiKeyPage from './pages/api-insert-page/ApiPage';
+
 
 import PromptPage from './pages/ai-service-page/PromptPage';
 import ProofreaderPage from './pages/ai-service-page/ProofreaderPage';
@@ -67,7 +67,7 @@ function App() {
   const handleToolSelection = (tool: string) => {
     setSelectedTool(tool);
     setIsRagChatActive(false);
-    navigate('/'); // Navigate to the main page when a tool is selected
+    navigate('/'); 
   };
 
   const handleClearDocument = () => {

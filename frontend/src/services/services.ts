@@ -1,10 +1,35 @@
 import axios from "axios";
 import { API_URL } from "../constant";
 
+const loginRequest = async (username: string, password: string) => {
+  const response = await axios.post(
+    `${API_URL}/auth/login/`,
+    { username, password },
+  );
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error("Failed to login");
+  }
+  return response.data;
+};
+
+const registerRequest = async(username: string, email: string, password: string) {
+  const response = await axios.post(
+    `${API_URL}/auth/register/`,
+    { username, email, password },
+  );
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error("Failed to register");
+  }
+  return response.data;
+};
 
 const postPrompt = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/prompt/`,
+    `${API_URL}/core/prompt/`,
     { prompt },
     {
       headers: {
@@ -21,7 +46,7 @@ const postPrompt = async (prompt: string) => {
 
 const postProofreader = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/proofreader/`,
+    `${API_URL}/grammar/proofreader/`,
     { prompt },
     {
       headers: {
@@ -38,7 +63,7 @@ const postProofreader = async (prompt: string) => {
 
 const postSummarizer = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/summarizer/`,
+    `${API_URL}/document/summarizer/`,
     { prompt },
     {
       headers: {
@@ -58,13 +83,12 @@ const postTranslator = async (
   targetLanguage: string,
   sourceLanguage: string
 ) => {
-  console.log(prompt, targetLanguage, sourceLanguage);
   const response = await axios.post(
-    `${API_URL}/translator/`,
-    { 
+    `${API_URL}/grammar/translator/`,
+    {
       prompt,
       target_language: targetLanguage,
-      source_language: sourceLanguage 
+      source_language: sourceLanguage,
     },
     {
       headers: {
@@ -81,7 +105,7 @@ const postTranslator = async (
 
 const postWriter = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/writer/`,
+    `${API_URL}/document/writer/`,
     { prompt },
     {
       headers: {
@@ -98,7 +122,7 @@ const postWriter = async (prompt: string) => {
 
 const postRewriter = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/rewriter/`,
+    `${API_URL}/document/rewriter/`,
     { prompt },
     {
       headers: {
@@ -115,7 +139,7 @@ const postRewriter = async (prompt: string) => {
 
 const postCopywriting = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/copywriting/`,
+    `${API_URL}/grammar/copywriting/`,
     { prompt },
     {
       headers: {
@@ -133,7 +157,7 @@ const postCopywriting = async (prompt: string) => {
 
 const postExplainer = async (prompt: string) => {
   const response = await axios.post(
-    `${API_URL}/explainer/`,
+    `${API_URL}/core/explainer/`,
     { prompt },
     {
       headers: {
@@ -150,7 +174,7 @@ const postExplainer = async (prompt: string) => {
 };
 
 const getHistory = async () => {
-  const response = await axios.get(`${API_URL}/history`, {
+  const response = await axios.get(`${API_URL}/core/history/`, {
     headers: {
       Authorization: localStorage.getItem("apiKey"),
     },
@@ -163,25 +187,24 @@ const getHistory = async () => {
 };
 
 const handleResponseData = (response: string) => {
-    if (typeof response === 'string' && response.charAt(0) === '{') {
-        const parsedData = JSON.parse(response);
-        if (parsedData.response) {
-            return parsedData.response;
-        }
+  if (typeof response === "string" && response.charAt(0) === "{") {
+    const parsedData = JSON.parse(response);
+    if (parsedData.response) {
+      return parsedData.response;
     }
-    return response;
-}
+  }
+  return response;
+};
 
 const insertFile = async (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await axios.post(`${API_URL}/pdf-upload/`, formData, {
+  const response = await axios.post(`${API_URL}/document/pdf-upload/`, formData, {
     headers: {
       Authorization: localStorage.getItem("apiKey"),
     },
   });
-    console.log("File inserted successfully");
   if (response.status === 200) {
     console.log("File inserted successfully");
     return response.data;
@@ -189,27 +212,35 @@ const insertFile = async (file: File) => {
     console.log("Failed to insert file");
     throw new Error("Failed to insert file");
   }
-}
+};
 
 const chatWithRAG = async (prompt: string) => {
-  const response = await axios.post(`${API_URL}/rag-chat/`, { prompt }, {
-    headers: {
-      Authorization: localStorage.getItem("apiKey"),
-    },
-  });
+  const response = await axios.post(
+    `${API_URL}/document/rag-chat/`,
+    { prompt },
+    {
+      headers: {
+        Authorization: localStorage.getItem("apiKey"),
+      },
+    }
+  );
   if (response.status === 200) {
     return response.data;
   } else {
     throw new Error("Failed to insert file");
   }
-}
+};
 
 const generateImage = async (prompt: string) => {
-  const response = await axios.post(`${API_URL}/image/`, { prompt }, {
-    headers: {
-      Authorization: localStorage.getItem("apiKey"),
-    },
-  });
+  const response = await axios.post(
+    `${API_URL}/core/image/`,
+    { prompt },
+    {
+      headers: {
+        Authorization: localStorage.getItem("apiKey"),
+      },
+    }
+  );
 
   if (response.status === 200) {
     return response.data;
@@ -218,12 +249,21 @@ const generateImage = async (prompt: string) => {
   }
 };
 
-const createEmail = async (context: string, recipients: string, sender: string, prompt: string) => {
-  const response = await axios.post(`${API_URL}/email/`, { context, recipients, sender, prompt }, {
-    headers: {
-      Authorization: localStorage.getItem("apiKey"),
-    },
-  });
+const createEmail = async (
+  context: string,
+  recipients: string,
+  sender: string,
+  prompt: string
+) => {
+  const response = await axios.post(
+    `${API_URL}/document/email-generator/`,
+    { context, recipients, sender, prompt },
+    {
+      headers: {
+        Authorization: localStorage.getItem("apiKey"),
+      },
+    }
+  );
   if (response.status === 200) {
     return response.data;
   } else {

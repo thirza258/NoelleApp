@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import services from '../../services/services';
 import InputField from '../../components/InputField';
 
 interface LoginPageProps {
@@ -13,13 +14,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, switchToSignup, error })
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (username.trim() === '' || password.trim() === '') {
       setLocalError('Username and password cannot be empty.');
       return;
     }
     setLocalError('');
-    onLogin(username, password);
+    const response = await services.loginRequest(username, password);
+    if (response.status === 200) {
+      onLogin(username, password);
+    } else {
+      setLocalError(response.message);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
