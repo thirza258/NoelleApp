@@ -1,6 +1,6 @@
 import { useState } from "react";
-import services from "../services/services";
-import type { Response } from "../interface"; // Assuming you have a Response interface
+import services from "../../services/services";
+import type { Response } from "../../interface"; // Assuming you have a Response interface
 import ReactMarkdown from "react-markdown";
 
 const EmailBuilderPage: React.FC = () => {

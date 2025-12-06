@@ -14,7 +14,7 @@ const loginRequest = async (username: string, password: string) => {
   return response.data;
 };
 
-const registerRequest = async(username: string, email: string, password: string) {
+const registerRequest = async (username: string, email: string, password: string) => {
   const response = await axios.post(
     `${API_URL}/auth/register/`,
     { username, email, password },
@@ -24,7 +24,6 @@ const registerRequest = async(username: string, email: string, password: string)
   } else {
     throw new Error("Failed to register");
   }
-  return response.data;
 };
 
 const postPrompt = async (prompt: string) => {
@@ -272,6 +271,8 @@ const createEmail = async (
 };
 
 const services = {
+  loginRequest,
+  registerRequest,
   postPrompt,
   postProofreader,
   postSummarizer,

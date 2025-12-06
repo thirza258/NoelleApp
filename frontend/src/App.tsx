@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom'; // Import routing components
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import services from './services/services';
 import NavBar from './components/NavBar';
 import Sidebar from './components/Sidebar';
-import AboutPage from './pages/about/AboutPage';
-
+import LoginPage from './pages/authentication/LoginPage';
 
 import PromptPage from './pages/ai-service-page/PromptPage';
 import ProofreaderPage from './pages/ai-service-page/ProofreaderPage';
@@ -21,17 +20,18 @@ import ImaGenPage from './pages/ai-service-page/ImaGenPage';
 import EmailBuilderPage from './pages/ai-service-page/EmailBuilderPage';
 
 function App() {
-  const [hasApiKey, setHasApiKey] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedTool, setSelectedTool] = useState("Prompt");
   const [history, setHistory] = useState([]);
   const [isRagChatActive, setIsRagChatActive] = useState(false);
   const [documentName, setDocumentName] = useState("");
-  const navigate = useNavigate(); // Hook to programmatically navigate
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const storedKey = localStorage.getItem('apiKey');
-    if (storedKey) {
-      setHasApiKey(true);
+    // Check for an existing session or token
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      setIsAuthenticated(true);
     }
 
     if (!localStorage.getItem('conversationId')) {
@@ -39,9 +39,8 @@ function App() {
     }
   }, []);
 
-
   useEffect(() => {
-    if (!hasApiKey) return;
+    if (!isAuthenticated) return;
 
     const fetchHistory = async () => {
       try {
@@ -53,21 +52,23 @@ function App() {
     };
 
     fetchHistory();
-  }, [hasApiKey]);
+  }, [isAuthenticated]);
 
-  const handleKeySubmission = () => {
-    setHasApiKey(true);
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    navigate('/');
   };
 
-  const handleClearKey = () => {
-    localStorage.removeItem('apiKey');
-    setHasApiKey(false);
+  const handleLogout = () => {
+    localStorage.removeItem('authToken'); // Or your session management
+    setIsAuthenticated(false);
+    navigate('/login');
   };
 
   const handleToolSelection = (tool: string) => {
     setSelectedTool(tool);
     setIsRagChatActive(false);
-    navigate('/'); 
+    navigate('/');
   };
 
   const handleClearDocument = () => {
@@ -86,38 +87,44 @@ function App() {
       case "Writer": return <WriterPage />;
       case "Copywriting": return <CopyWritingPage />;
       case "Explainer": return <ExplainerPage />;
-      case "Document AI": return isRagChatActive ? <RAGPage documentName={documentName} /> : <InsertFile onUploadSuccess={(documentName) => {setDocumentName(documentName); setIsRagChatActive(true)}} />;
+      case "Document AI": return isRagChatActive ? <RAGPage documentName={documentName} /> : <InsertFile onUploadSuccess={(documentName) => { setDocumentName(documentName); setIsRagChatActive(true) }} />;
       case "Image Generation": return <ImaGenPage />;
       case "Email Builder": return <EmailBuilderPage />;
       default: return <PromptPage />;
     }
   };
 
-  if (!hasApiKey) {
-    return <ApiKeyPage onKeySubmit={handleKeySubmission} />;
-  }
-
   return (
     <div className="h-screen flex flex-col bg-gray-100">
-      <NavBar
-        selectedTool={selectedTool}
-        hasApiKey={hasApiKey}
-        onClearApiKey={handleClearKey}
-        onClearDocument={handleClearDocument}
-      />
-      <div className="flex flex-grow overflow-hidden">
-        <Sidebar
-          selectedTool={selectedTool}
-          setSelectedTool={handleToolSelection}
-          history={history}
+      <Routes>
+        <Route path="/login" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
+        <Route
+          path="/*"
+          element={
+            isAuthenticated ? (
+              <>
+                <NavBar
+                  selectedTool={selectedTool}
+                  onLogout={handleLogout}
+                  onClearDocument={handleClearDocument}
+                />
+                <div className="flex flex-grow overflow-hidden">
+                  <Sidebar
+                    selectedTool={selectedTool}
+                    setSelectedTool={handleToolSelection}
+                    history={history}
+                  />
+                  <main className="flex-grow overflow-y-auto p-6">
+                    {renderSelectedPage()}
+                  </main>
+                </div>
+              </>
+            ) : (
+              <LoginPage onLoginSuccess={handleLoginSuccess} />
+            )
+          }
         />
-        <main className="flex-grow overflow-y-auto p-6">
-          <Routes>
-            <Route path="/" element={renderSelectedPage()} />
-            <Route path="/about" element={<AboutPage />} />
-          </Routes>
-        </main>
-      </div>
+      </Routes>
     </div>
   );
 }
