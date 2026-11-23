@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "noelle"
+version = "1.0.0"
+description = "Noelle Desktop AI Studio: a local-first workbench for discovering, running, comparing and serving Hugging Face models."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "thirzq" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: X11 Applications :: Qt",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# The desktop shell itself never imports torch. Everything heavy lives in the
+# optional "runtime" extra, which is installed either in the same interpreter or
+# in an isolated environment created by the environment manager.
+dependencies = [
+    "PySide6>=6.7",
+    "huggingface_hub>=1.0",
+    "pyzmq>=26",
+    "psutil>=5.9",
+    "keyring>=25",
+]
+
+[project.optional-dependencies]
+runtime = [
+    "torch>=2.4",
+    "transformers>=4.50",
+    "accelerate>=1.0",
+    "safetensors>=0.4",
+    "numpy>=1.26",
+    "pillow>=10",
+    "soundfile>=0.12",
+]
+diffusion = ["diffusers>=0.30"]
+rag = [
+    "sentence-transformers>=3.0",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    "sqlite-vec>=0.1.6",
+]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.30"]
+peft = ["peft>=0.12"]
+# Apple Silicon 4-bit path (MLX).
+mlx = [
+    "mlx>=0.20; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-lm>=0.20; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+# CUDA-only quantization backends. They are detected at runtime and the UI
+# disables them (with the reason) when the hardware cannot run them.
+cuda-quant = ["bitsandbytes>=0.43", "gptqmodel>=1.0", "autoawq>=0.2"]
+gguf = ["llama-cpp-python>=0.3", "gguf>=0.10"]
+jupyter = ["qtconsole>=5.5", "ipykernel>=6.29"]
+dev = ["pytest>=8", "pytest-qt>=4.4", "httpx>=0.27", "openai>=1.40", "pyinstaller>=6.6", "pyflakes>=3.2", "coverage>=7"]
+all = ["noelle[runtime,diffusion,rag,server,peft,mlx,jupyter]"]
+
+[project.scripts]
+noelle = "noelle.__main__:main"
+
+[project.gui-scripts]
+noelle-studio = "noelle.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["noelle*"]
+
+[tool.setuptools.package-data]
+noelle = ["config/*.json", "app/assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
+markers = [
+    "integration: spawns the runtime worker and loads real (small) models",
+    "network: needs access to huggingface.co",
+    "e2e: drives the Qt UI offscreen",
+]

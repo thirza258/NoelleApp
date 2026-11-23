@@ -8,4 +8,11 @@ node_modules/
 .env.production.local
 db.sqlite3
 
-media/
+media/.venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.DS_Store
+.coverage
+htmlcov/

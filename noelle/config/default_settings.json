@@ -1,0 +1,63 @@
+{
+  "hub": {
+    "endpoint": null,
+    "page_size": 30,
+    "hero_count": 5
+  },
+  "storage": {
+    "hf_home": null,
+    "download_mode": "hf_cache",
+    "max_download_workers": 8,
+    "download_retries": 5,
+    "verify_checksums": true
+  },
+  "runtime": {
+    "python": null,
+    "environment": null,
+    "device": "auto",
+    "memory_budget_gb": null,
+    "safety_headroom": 0.15,
+    "keep_models_loaded": true,
+    "offline": true,
+    "heartbeat_timeout_s": 20,
+    "trusted_remote_code": []
+  },
+  "generation": {
+    "system_prompt": "You are a helpful assistant.",
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 50,
+    "repetition_penalty": 1.1,
+    "max_new_tokens": 512
+  },
+  "rag": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "chunk_tokens": 512,
+    "chunk_overlap": 64,
+    "top_k": 4,
+    "context_chars": 6000
+  },
+  "web_search": {
+    "provider": "searxng",
+    "searxng_url": "http://127.0.0.1:8888",
+    "max_queries": 3,
+    "results_per_query": 4,
+    "context_chars": 8000,
+    "timeout_s": 10
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "api_key": null,
+    "default_model": null,
+    "autostart": false
+  },
+  "quantization": {
+    "llama_cpp_dir": null
+  },
+  "ui": {
+    "hero_collapse_threshold": 120,
+    "hero_width": 380,
+    "hero_animation_ms": 250
+  }
+}
