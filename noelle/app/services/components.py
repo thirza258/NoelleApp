@@ -36,6 +36,7 @@ __all__ = ["LLAMA_CPP", "ComponentCancelled", "ComponentError", "ComponentReleas
 LLAMA_CPP = "llama.cpp"
 RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
 SOURCE_URL = "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/refs/tags/{tag}"
+TREE_URL = "https://api.github.com/repos/ggml-org/llama.cpp/git/trees/{tag}?recursive=1"
 MANIFEST = "noelle-component.json"
 from noelle.runtime.llama_tools import TOOL_NAMES  # noqa: E402
 MAX_ARCHIVE_BYTES = 1_500_000_000
@@ -59,6 +60,7 @@ class ComponentRelease:
     asset_size: int
     asset_sha256: str | None
     source_url: str
+    tree_url: str = ""
     homepage: str = "https://github.com/ggml-org/llama.cpp"
     license: str = "MIT"
 
@@ -94,7 +96,7 @@ def pick_release(releases: list[dict[str, Any]], suffix: str) -> ComponentReleas
                     tag=tag, asset_name=name, asset_url=str(asset["browser_download_url"]),
                     asset_size=int(asset.get("size") or 0),
                     asset_sha256=digest.split(":", 1)[1] if digest.startswith("sha256:") else None,
-                    source_url=SOURCE_URL.format(tag=tag))
+                    source_url=SOURCE_URL.format(tag=tag), tree_url=TREE_URL.format(tag=tag))
     raise ComponentError(f"No recent llama.cpp release ships a '{suffix}' build.")
 
 
@@ -191,6 +193,48 @@ def _extract(archive: Path, destination: Path, *, keep: Callable[[str], bool] | 
         tf.extractall(destination, members=members, filter="data")
 
 
+def _is_converter_path(path: str) -> bool:
+    return path == "convert_hf_to_gguf.py" or path == "LICENSE" or path.startswith("gguf-py/")
+
+
+def _converter_hashes(session: Any, release: ComponentRelease) -> dict[str, str]:
+    """git blob SHA-1 of every converter file at the release tag, from GitHub's tree API.
+
+    The source archive itself has no published checksum, so each extracted file is checked
+    against the repository's own object hashes for that tag instead."""
+    url = release.tree_url or TREE_URL.format(tag=release.tag)
+    response = session.get(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Noelle/1.0"},
+                           timeout=30)
+    if response.status_code != 200:
+        raise ComponentError(f"Could not fetch the file hashes for llama.cpp {release.tag} "
+                             f"(HTTP {response.status_code}); nothing was installed.")
+    tree = response.json()
+    if tree.get("truncated"):
+        raise ComponentError("GitHub returned an incomplete file list, so the converter cannot be verified.")
+    hashes = {entry["path"]: entry["sha"] for entry in tree.get("tree", [])
+              if entry.get("type") == "blob" and _is_converter_path(str(entry.get("path", "")))}
+    if "convert_hf_to_gguf.py" not in hashes or not any(p.startswith("gguf-py/") for p in hashes):
+        raise ComponentError(f"llama.cpp {release.tag} has no GGUF converter.")
+    return hashes
+
+
+def _verify_converter(source_root: Path, expected: dict[str, str]) -> None:
+    from noelle.runtime.downloader import git_blob_sha1
+
+    roots = [p for p in source_root.iterdir() if p.is_dir()]
+    if len(roots) != 1:
+        raise ComponentError("Unexpected layout in the llama.cpp source archive.")
+    extracted = {p.relative_to(roots[0]).as_posix(): p for p in roots[0].rglob("*") if p.is_file() or p.is_symlink()}
+    if set(extracted) != set(expected):
+        missing = sorted(set(expected) - set(extracted))[:3]
+        extra = sorted(set(extracted) - set(expected))[:3]
+        raise ComponentError(f"The converter files do not match llama.cpp's file list (missing {missing}, "
+                             f"unexpected {extra}); nothing was installed.")
+    for relative, path in extracted.items():
+        if path.is_symlink() or git_blob_sha1(path) != expected[relative]:
+            raise ComponentError(f"{relative} does not match the llama.cpp release; nothing was installed.")
+
+
 def _find_bin_dir(root: Path) -> Path:
     for candidate in sorted(root.rglob(TOOL_NAMES[0])):
         if all((candidate.parent / name).is_file() for name in TOOL_NAMES):
@@ -207,7 +251,11 @@ def _want_source(name: str) -> bool:
 def install_llama_cpp(release: ComponentRelease, *, progress: Progress | None = None,
                       stop_event: threading.Event | None = None, session: Any = None) -> dict[str, Any]:
     """Download, verify and install. Only call this after the user agreed to the download."""
+    if not release.asset_sha256:
+        raise ComponentError("GitHub did not publish a SHA-256 for this llama.cpp build, so Noelle will not "
+                             "install it unverified.")
     session = session or _session()
+    expected_sources = _converter_hashes(session, release)  # before any download: refuse early if unverifiable
     root = install_root()
     root.mkdir(parents=True, exist_ok=True)
     staging = root / f".staging-{release.tag}"
@@ -225,6 +273,9 @@ def install_llama_cpp(release: ComponentRelease, *, progress: Progress | None = 
         unpacked = staging / "unpacked"
         _extract(binaries, unpacked)
         _extract(source, staging / "source", keep=_want_source)
+        _verify_converter(staging / "source", expected_sources)
+        if progress:
+            progress({"stage": "verified", "file": "converter (git blob hashes of the release tag)"})
         final = staging / "final"
         final.mkdir()
         shutil.move(str(_find_bin_dir(unpacked)), str(final / "bin"))
@@ -278,4 +329,5 @@ def describe(release: ComponentRelease) -> str:
     size = f"{release.asset_size / 1e6:.1f} MB" if release.asset_size else "size unknown"
     return (f"llama.cpp {release.tag} for this computer ({release.asset_name}, {size}) and the GGUF converter "
             f"from the same release, downloaded from {release.homepage} ({release.license} licence). "
-            f"Files are checked against GitHub's SHA-256 and stored in {install_root()}.")
+            f"The binaries are checked against GitHub's SHA-256 and every converter file against the release "
+            f"tag's git hashes; they are stored in {install_root()}.")

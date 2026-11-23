@@ -552,15 +552,26 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _llama_server_help(binary: str) -> str:
+    import subprocess
+
+    try:
+        result = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LoadFailed(f"Could not start llama-server: {exc}") from exc
+    return (result.stdout or "") + (result.stderr or "")
+
+
 class LlamaServerEngine:
     """Runs a GGUF file in the official ``llama-server`` child process (loopback only) and streams
     from its OpenAI-compatible endpoint. Metal/CUDA offload is handled by llama.cpp itself."""
 
     engine = "llama_server"
 
-    def __init__(self, process: Any, port: int, n_ctx: int, device: str) -> None:
+    def __init__(self, process: Any, port: int, n_ctx: int, device: str, api_key: str = "") -> None:
         self.process = process
         self.port = port
+        self.api_key = api_key
         self.context_window = n_ctx
         self.device = device
         self.kv_per_token = None
@@ -575,16 +586,29 @@ class LlamaServerEngine:
 
         if not Path(gguf_path).is_file():
             raise LoadFailed(f"GGUF file not found: {gguf_path}")
+        import secrets
+
+        help_text = _llama_server_help(binary)
+        if "--api-key" not in help_text:
+            raise LoadFailed("This llama-server build is too old (no --api-key support).",
+                             hint="Update the llama.cpp tools in Settings › Components.")
         port = _free_port()
+        api_key = secrets.token_urlsafe(32)  # loopback is shared by every local process: require a key
         args = [binary, "-m", gguf_path, "--host", "127.0.0.1", "--port", str(port), "-c", str(n_ctx),
                 "-ngl", "999" if device != "cpu" else "0"]
+        if "--no-webui" in help_text:
+            args.append("--no-webui")
+        env = {k: v for k, v in os.environ.items() if k not in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")}
+        if "LLAMA_API_KEY" in help_text:
+            env["LLAMA_API_KEY"] = api_key  # keeps the key out of process listings
+        else:
+            args += ["--api-key", api_key]
         log_path = paths.logs_dir() / "llama-server.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log = open(log_path, "ab")  # noqa: SIM115 - owned by the child process
-        env = {k: v for k, v in os.environ.items() if k not in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")}
         process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
         log.close()
-        engine = cls(process, port, n_ctx, device)
+        engine = cls(process, port, n_ctx, device, api_key)
         deadline = time.monotonic() + startup_timeout
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -608,7 +632,7 @@ class LlamaServerEngine:
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         try:
             conn.request(method, path, body=json.dumps(body) if body is not None else None,
-                         headers={"Content-Type": "application/json"})
+                         headers=self._headers())
             response = conn.getresponse()
             raw = response.read()
             try:
@@ -617,6 +641,12 @@ class LlamaServerEngine:
                 return response.status, raw.decode("utf-8", "replace")
         finally:
             conn.close()
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     def count_tokens(self, text: str) -> int:
         status, data = self._call("POST", "/tokenize", {"content": text})
@@ -650,7 +680,7 @@ class LlamaServerEngine:
         usage: dict[str, Any] = {}
         try:
             conn.request("POST", "/v1/chat/completions", body=json.dumps(body),
-                         headers={"Content-Type": "application/json", "Accept": "text/event-stream"})
+                         headers={**self._headers(), "Accept": "text/event-stream"})
             response = conn.getresponse()
             if response.status != 200:
                 raise LoadFailed(f"llama-server returned HTTP {response.status}: "

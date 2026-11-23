@@ -72,8 +72,12 @@ class ComponentInstallDialog(QDialog):
             f"({format_bytes(release.asset_size)}) plus the GGUF converter script from the same release.<br>"
             f"<b>From:</b> {release.homepage} (official releases, {release.license} licence)<br>"
             f"<b>To:</b> {components.install_root()}<br>"
-            f"<b>Checks:</b> SHA-256 published by GitHub{' ✓' if release.asset_sha256 else ' (not published)'}; "
-            "nothing outside that folder is changed.")
+            "<b>Checks:</b> binaries against the SHA-256 GitHub publishes, converter files against the release "
+            "tag's git hashes; nothing outside that folder is changed.")
+        if not release.asset_sha256:
+            self.details.setText(self.details.text() + f"<br><span style='color:{theme.DANGER}'>GitHub did not "
+                                 "publish a checksum for this build, so it cannot be installed.</span>")
+            return
         self.install_btn.setEnabled(True)
 
     def _resolve_failed(self, message: str) -> None:

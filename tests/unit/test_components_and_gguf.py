@@ -45,30 +45,48 @@ class _Stream:
             yield self.data[start:start + 1024]
 
 
+SOURCE_FILES = {"convert_hf_to_gguf.py": b"print('convert')\n", "gguf-py/gguf/__init__.py": b"", "LICENSE": b"MIT"}
+
+
+def _blob(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def _tree(files: dict[str, bytes] = SOURCE_FILES, *, truncated: bool = False) -> dict[str, Any]:
+    entries = [{"path": path, "type": "blob", "sha": _blob(data)} for path, data in files.items()]
+    entries.append({"path": "src/llama.cpp", "type": "blob", "sha": _blob(b"// not needed")})
+    return {"truncated": truncated, "tree": entries}
+
+
 class FakeSession:
-    def __init__(self, files: dict[str, bytes], releases: list[dict[str, Any]] | None = None) -> None:
-        self.files, self.releases = files, releases or []
+    def __init__(self, files: dict[str, bytes], releases: list[dict[str, Any]] | None = None,
+                 tree: dict[str, Any] | None = None) -> None:
+        self.files, self.releases, self.tree = files, releases or [], tree or _tree()
+        self.downloaded: list[str] = []
 
     def stream(self, method: str, url: str, **_kw: Any) -> _Stream:
+        self.downloaded.append(url)
         return _Stream(self.files[url]) if url in self.files else _Stream(b"", 404)
 
     def get(self, url: str, **_kw: Any) -> Any:
-        return type("R", (), {"status_code": 200, "json": lambda _self: self.releases})()
+        body = self.tree if url == "https://x/tree" else self.releases
+        return type("R", (), {"status_code": 200, "json": lambda _self: body})()
 
 
-def _release(binary_archive: bytes, *, digest: str | None = None) -> components.ComponentRelease:
+def _release(binary_archive: bytes, *, digest: str | None = None, no_digest: bool = False) -> components.ComponentRelease:
     return components.ComponentRelease(
         tag="b1", asset_name="llama-b1-bin-test.tar.gz", asset_url="https://x/bin.tar.gz",
-        asset_size=len(binary_archive), asset_sha256=digest or hashlib.sha256(binary_archive).hexdigest(),
-        source_url="https://x/src.tar.gz")
+        asset_size=len(binary_archive),
+        asset_sha256=None if no_digest else (digest or hashlib.sha256(binary_archive).hexdigest()),
+        source_url="https://x/src.tar.gz", tree_url="https://x/tree")
 
 
-def _archives() -> tuple[bytes, bytes]:
+def _archives(source_files: dict[str, bytes] = SOURCE_FILES) -> tuple[bytes, bytes]:
     binaries = _tar({f"build/bin/llama-quantize{EXE}": b"#!/bin/sh\n", f"build/bin/llama-server{EXE}": b"#!/bin/sh\n",
                      "build/bin/libggml.dylib": b"lib"})
-    source = _tar({"llama.cpp-b1/convert_hf_to_gguf.py": b"print('convert')\n",
-                   "llama.cpp-b1/gguf-py/gguf/__init__.py": b"", "llama.cpp-b1/LICENSE": b"MIT",
-                   "llama.cpp-b1/src/llama.cpp": b"// not needed"}, mode=0o644)
+    entries = {f"llama.cpp-b1/{name}": data for name, data in source_files.items()}
+    entries["llama.cpp-b1/src/llama.cpp"] = b"// not needed"
+    source = _tar(entries, mode=0o644)
     return binaries, source
 
 
@@ -130,6 +148,33 @@ def test_archive_path_traversal_is_refused(tmp_path: Path) -> None:
     assert not (components.install_root().parent / "escaped.txt").exists()
 
 
+def test_tampered_converter_is_refused(tmp_path: Path) -> None:
+    binaries, source = _archives({**SOURCE_FILES, "convert_hf_to_gguf.py": b"import os; os.system('evil')\n"})
+    session = FakeSession({"https://x/bin.tar.gz": binaries, "https://x/src.tar.gz": source})
+    with pytest.raises(components.ComponentError, match="does not match"):
+        components.install_llama_cpp(_release(binaries), session=session)
+    assert components.installed_llama_cpp() is None
+
+
+def test_unexpected_converter_files_are_refused(tmp_path: Path) -> None:
+    binaries, source = _archives({**SOURCE_FILES, "gguf-py/gguf/extra.py": b"print('not in the tag')\n"})
+    session = FakeSession({"https://x/bin.tar.gz": binaries, "https://x/src.tar.gz": source})
+    with pytest.raises(components.ComponentError, match="file list"):
+        components.install_llama_cpp(_release(binaries), session=session)
+
+
+def test_unverifiable_builds_are_never_downloaded(tmp_path: Path) -> None:
+    binaries, source = _archives()
+    session = FakeSession({"https://x/bin.tar.gz": binaries, "https://x/src.tar.gz": source})
+    with pytest.raises(components.ComponentError, match="SHA-256"):
+        components.install_llama_cpp(_release(binaries, no_digest=True), session=session)
+    truncated = FakeSession({"https://x/bin.tar.gz": binaries, "https://x/src.tar.gz": source},
+                            tree=_tree(truncated=True))
+    with pytest.raises(components.ComponentError, match="incomplete"):
+        components.install_llama_cpp(_release(binaries), session=truncated)
+    assert session.downloaded == [] and truncated.downloaded == []  # refused before downloading anything
+
+
 def test_cancel_stops_the_download(tmp_path: Path) -> None:
     binaries, source = _archives()
     session = FakeSession({"https://x/bin.tar.gz": binaries, "https://x/src.tar.gz": source})
@@ -145,6 +190,13 @@ FAKE_SERVER = r'''
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 args = sys.argv[1:]
+if "--help" in args:
+    print("--api-key KEY  API key to use for authentication (env: LLAMA_API_KEY)\n--no-webui  Disable the Web UI")
+    sys.exit(0)
+import os
+KEY = os.environ["LLAMA_API_KEY"]
+assert "--api-key" not in args and KEY not in args  # the key travels via the environment only
+assert "--no-webui" in args
 port = int(args[args.index("--port") + 1])
 assert args[args.index("--host") + 1] == "127.0.0.1"
 class H(BaseHTTPRequestHandler):
@@ -157,6 +209,8 @@ class H(BaseHTTPRequestHandler):
         self._json(200, {"status": "ok"})
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.headers.get("Authorization") != "Bearer " + KEY:
+            return self._json(401, {"error": "invalid api key"})
         if self.path == "/tokenize":
             return self._json(200, {"tokens": list(range(len(body["content"].split())))})
         assert body["stream"] is True and body["max_tokens"] >= 1
@@ -189,6 +243,8 @@ def test_llama_server_engine_streams(tmp_path: Path) -> None:
         assert "".join(tokens) == "Hello from GGUF" == result.text
         assert result.completion_tokens == 3 and result.prompt_tokens == 7 and result.finish_reason == "stop"
         assert engine.count_tokens("one two three") == 3
+        anonymous = LlamaServerEngine(None, engine.port, 4096, "mps", api_key="")
+        assert anonymous._call("POST", "/tokenize", {"content": "x"})[0] == 401  # other local processes are refused
     finally:
         engine.release()
     assert engine.process is None
