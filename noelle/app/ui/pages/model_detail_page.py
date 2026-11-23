@@ -9,11 +9,11 @@ from typing import Any
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QMessageBox,
     QScrollArea,
     QStackedWidget,
     QTabWidget,
@@ -28,7 +28,6 @@ from noelle.app.services.model_registry import ModelRecord
 from noelle.app.services.task_runner import runner
 from noelle.app.ui.widgets.common import (
     Avatar,
-    Banner,
     EmptyState,
     FlowLayout,
     Pill,
@@ -38,14 +37,15 @@ from noelle.app.ui.widgets.common import (
     human_count,
     icon_button,
     label,
+    open_external_url,
     time_ago,
 )
+from noelle.app.ui.widgets.analysis_panel import AnalysisPanel, AnalysisSummary, RemoteCodeNotice
 from noelle.app.ui.widgets.download_panel import DownloadPanel
-from noelle.runtime import tasks
+from noelle.runtime import advisor, tasks
 from noelle.runtime.preflight import (
     PRECISIONS,
     context_limit,
-    estimate_runtime_bytes,
     format_bytes,
     format_params,
 )
@@ -81,6 +81,10 @@ class ModelDetailPage(QWidget):
         self._load_handle: Any = None
         self._playground: Any = None
         self._generation = 0
+        self.tokenizer_config: dict[str, Any] | None = None
+        self.assessment: advisor.Assessment | None = None
+        self._remote_once = False  # "Allow once": trusted for this session only, never persisted
+        self._profile = str(ctx.settings.get("runtime.profile") or "balanced")
 
         self.stack = QStackedWidget()
         root = QVBoxLayout(self)
@@ -140,10 +144,13 @@ class ModelDetailPage(QWidget):
         self.pills_host = QWidget()
         self.pills = FlowLayout(self.pills_host, spacing=6)
         self.left_layout.addWidget(self.pills_host)
-        self.remote_code_banner = Banner("warning", "This repository ships custom Python code that runs when the model "
-                                                    "loads. Only allow it for publishers you trust.")
-        self.remote_code_banner.hide()
-        self.left_layout.addWidget(self.remote_code_banner)
+        self.remote_notice = RemoteCodeNotice()
+        self.remote_notice.allow_once.connect(self._allow_once)
+        self.remote_notice.trust_repository.connect(lambda: self._trust("repo"))
+        self.remote_notice.trust_publisher.connect(lambda: self._trust("publisher"))
+        self.remote_notice.revoke.connect(self._revoke_trust)
+        self.remote_notice.review.connect(self._review_remote_code)
+        self.left_layout.addWidget(self.remote_notice)
 
         # overview
         overview, overview_layout = _section("Overview")
@@ -155,13 +162,9 @@ class ModelDetailPage(QWidget):
 
         # hardware fit
         fit, fit_layout = _section("Hardware fit")
-        self.fit_rows = QVBoxLayout()
-        self.fit_rows.setSpacing(5)
-        fit_layout.addLayout(self.fit_rows)
-        self.fit_banner = Banner("warning", "")
-        self.fit_banner.add_action("Optimize", lambda: self.tabs.setCurrentWidget(self.optimize_tab))
-        self.fit_banner.hide()
-        fit_layout.addWidget(self.fit_banner)
+        self.analysis_summary = AnalysisSummary()
+        self.analysis_summary.details_requested.connect(lambda: self.tabs.setCurrentWidget(self.analysis_tab))
+        fit_layout.addWidget(self.analysis_summary)
         self.left_layout.addWidget(fit)
 
         # download
@@ -176,6 +179,14 @@ class ModelDetailPage(QWidget):
         form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
+        self.profile = QComboBox()
+        for key, text in advisor.PROFILES.items():
+            self.profile.addItem(text, key)
+            self.profile.setItemData(self.profile.count() - 1, advisor.PROFILE_HINTS[key],
+                                     Qt.ItemDataRole.ToolTipRole)
+        self.profile.setCurrentIndex(max(self.profile.findData(self._profile), 0))
+        self.profile.currentIndexChanged.connect(lambda _i: self._set_profile(self.profile.currentData()))
+        form.addRow(label("Profile", "muted"), self.profile)
         self.variant = QComboBox()
         self.variant.currentIndexChanged.connect(self._on_variant)
         form.addRow(label("Build", "muted"), self.variant)
@@ -184,10 +195,6 @@ class ModelDetailPage(QWidget):
         self.device = QComboBox()
         form.addRow(label("Device", "muted"), self.device)
         runtime_layout.addLayout(form)
-        self.allow_remote = QCheckBox("Allow remote code for this model")
-        self.allow_remote.toggled.connect(self._on_trust_toggled)
-        self.allow_remote.hide()
-        runtime_layout.addWidget(self.allow_remote)
         load_row = QHBoxLayout()
         self.load_btn = button("Load model", "zap", "primary")
         self.load_btn.clicked.connect(self._load_or_unload)
@@ -218,6 +225,9 @@ class ModelDetailPage(QWidget):
         self.playground_host = QWidget()
         self.playground_layout = QVBoxLayout(self.playground_host)
         self.playground_layout.setContentsMargins(0, 0, 0, 0)
+        self.analysis_tab = AnalysisPanel(self._profile)
+        self.analysis_tab.profile_changed.connect(self._set_profile)
+        self.analysis_tab.action_requested.connect(self._on_analysis_action)
         self.knowledge_tab = QWidget()
         self.optimize_tab = QWidget()
         self.code_tab = QWidget()
@@ -250,6 +260,9 @@ class ModelDetailPage(QWidget):
             summary = model
         self.summary = summary
         self.config = {}
+        self.tokenizer_config = None
+        self.assessment = None
+        self._remote_once = False
         self.stack.setCurrentIndex(1)
         self._render_identity()
         self._build_tabs()
@@ -273,19 +286,22 @@ class ModelDetailPage(QWidget):
             self._render_facts()
             self._render_fit()
 
-        def fetch() -> tuple[ModelSummary | None, dict[str, Any]]:
+        local_dir = Path(record.local_path) if record and record.local_path else None
+
+        def fetch() -> tuple[ModelSummary | None, dict[str, Any], dict[str, Any] | None]:
             info = None
             try:
                 info = self.ctx.hf.model_info(summary.id)
             except Exception:
                 info = None
             config = self.config or self.ctx.hf.fetch_config(summary.id)
-            return info, config
+            return info, config, _tokenizer_config(self.ctx, summary, local_dir)
 
-        def done(result: tuple[ModelSummary | None, dict[str, Any]]) -> None:
+        def done(result: tuple[ModelSummary | None, dict[str, Any], dict[str, Any] | None]) -> None:
             if generation != self._generation:
                 return
-            info, config = result
+            info, config, tokenizer_config = result
+            self.tokenizer_config = tokenizer_config
             if info is not None:
                 # keep list-level fields the detail call may omit
                 info.trending_score = info.trending_score or summary.trending_score
@@ -295,6 +311,7 @@ class ModelDetailPage(QWidget):
                 self.config = config
             self._render_identity()
             self._render_fit()
+            self._apply_profile()
             self._refresh_docs()
 
         runner().submit(fetch, on_result=done)
@@ -322,12 +339,7 @@ class ModelDetailPage(QWidget):
             self.pills.addWidget(Pill("GGUF", "unknown"))
         if s.custom_code:
             self.pills.addWidget(Pill("custom code", "yellow"))
-        trusted = s.id in (self.ctx.settings.get("runtime.trusted_remote_code") or [])
-        self.remote_code_banner.setVisible(s.custom_code and not trusted)
-        self.allow_remote.setVisible(s.custom_code)
-        self.allow_remote.blockSignals(True)
-        self.allow_remote.setChecked(trusted)
-        self.allow_remote.blockSignals(False)
+        self._render_remote_code()
         self._render_facts()
 
     def _render_facts(self) -> None:
@@ -351,49 +363,25 @@ class ModelDetailPage(QWidget):
             ("Updated", time_ago(s.last_modified) if s.last_modified else "—"),
             ("Popularity", f"{human_count(s.downloads)} downloads · {human_count(s.likes)} likes"),
         ]
+        record = self.ctx.registry.get_model(s.id, source="hub")
+        if record is not None and record.exists_on_disk():  # provenance of the copy on this machine
+            commit = record.commit_hash or record.revision
+            rows += [
+                ("Revision", commit[:12] if commit and len(commit) >= 12 else (commit or "—")),
+                ("Downloaded", time_ago(record.downloaded_at) if record.downloaded_at else "—"),
+                ("Last used", time_ago(record.last_used_at) if record.last_used_at else "Not loaded yet"),
+                # zero-width spaces after separators let long paths wrap inside the sidebar
+                ("Stored at", (record.local_path or "—").replace("/", "/\u200b").replace("\\", "\\\u200b")),
+            ]
         for key, value in rows:
             value_label = label(str(value), selectable=True)
             value_label.setWordWrap(True)
             self.facts.addRow(label(key, "muted"), value_label)
 
     def _render_fit(self) -> None:
-        clear_layout(self.fit_rows)
-        s = self.summary
-        if s is None:
+        if self.summary is None:
             return
-        budget = self.ctx.hardware.memory_budget(float(self.ctx.settings.get("runtime.safety_headroom", 0.15)))
-        usable = budget.usable_bytes
-        compat = self.ctx.compat(s)
-        header = QHBoxLayout()
-        header.addWidget(Pill(compat.label, compat.level))
-        header.addStretch(1)
-        header.addWidget(label(f"{format_bytes(usable)} usable", "faint"))
-        self.fit_rows.addLayout(header)
-        if s.param_count:
-            for key, caption in (("fp16", "FP16 / BF16"), ("int8", "8-bit"), ("mlx-4bit" if budget.device == "mps"
-                                                                                 else "nf4", "4-bit")):
-                need = estimate_runtime_bytes(s.param_count, key, config=self.config or None) or 0
-                ok = need <= usable
-                row = QHBoxLayout()
-                mark = label("✓" if ok else "✗")
-                mark.setStyleSheet(f"color: {theme.SUCCESS if ok else theme.DANGER}; font-weight: 700;")
-                mark.setFixedWidth(14)
-                row.addWidget(mark)
-                row.addWidget(label(caption, "muted"))
-                row.addStretch(1)
-                row.addWidget(label(f"~{format_bytes(need)}", "mono"))
-                self.fit_rows.addLayout(row)
-        detail = label(compat.detail, "faint", wrap=True)
-        self.fit_rows.addWidget(detail)
-        if compat.level in ("yellow", "red") and compat.fp16_bytes:
-            target = "Quantize to 4-bit MLX" if budget.device == "mps" else "Quantize to 4-bit"
-            self.fit_banner.set_text(
-                f"<b>Hardware notice:</b> this model needs ~{format_bytes(compat.fp16_bytes)} at FP16, above your "
-                f"{format_bytes(usable)} budget. Open <i>Optimize</i> and choose “{target}” to build a local "
-                f"~{format_bytes(compat.int4_bytes)} checkpoint.")
-            self.fit_banner.show()
-        else:
-            self.fit_banner.hide()
+        self._assess()
 
     # ================================================================ tabs
     def _build_tabs(self) -> None:
@@ -405,7 +393,7 @@ class ModelDetailPage(QWidget):
         while self.tabs.count():
             widget = self.tabs.widget(0)
             self.tabs.removeTab(0)
-            if widget is not self.playground_host:  # release web views, kernels and timers of the old model
+            if widget not in (self.playground_host, self.analysis_tab):  # release web views, kernels, timers
                 if hasattr(widget, "shutdown"):
                     widget.shutdown()
                 widget.deleteLater()
@@ -415,6 +403,7 @@ class ModelDetailPage(QWidget):
         family = s.family
         self.tabs.addTab(self.playground_host, icons.icon("play", theme.TEXT_MUTED, 14),
                          FAMILY_LABEL.get(family or "", "Playground"))
+        self.tabs.addTab(self.analysis_tab, icons.icon("gauge", theme.TEXT_MUTED, 14), "Analysis")
         if family == tasks.TEXT:
             from noelle.app.ui.widgets.knowledge_panel import KnowledgePanel
 
@@ -540,14 +529,14 @@ class ModelDetailPage(QWidget):
         assert s is not None
         record = self.selected_record()
         if record is not None:
-            payload = record.worker_payload()
+            payload = record.worker_payload(self.ctx.settings)
             payload["task"] = s.pipeline_tag or payload.get("task")
         else:
             payload = {"model_id": s.id, "task": s.pipeline_tag or "text-generation"}
         if self.variant.currentIndex() == 0:
             payload["precision"] = self.precision.currentData() or "auto"
         payload["device"] = self.device.currentData() or "auto"
-        payload["trust_remote_code"] = bool(self.allow_remote.isChecked())
+        payload["trust_remote_code"] = self._remote_once or self.ctx.is_trusted(s.id)
         return payload
 
     def _loaded_entry(self) -> dict[str, Any] | None:
@@ -623,22 +612,153 @@ class ModelDetailPage(QWidget):
         if payload.get("code") == "OOM":
             self.force_btn.show()
         if payload.get("code") == "REMOTE_CODE_BLOCKED":
-            self.allow_remote.show()
+            self._render_remote_code(force=True)
         if payload.get("component") == "llama.cpp":
             from noelle.app.ui.component_dialog import ensure_llama_cpp
 
             ensure_llama_cpp(self, lambda: self._load(force=False), reason=payload.get("message"))
 
-    def _on_trust_toggled(self, checked: bool) -> None:
-        if self.summary is None:
+    # ======================================================== remote code
+    def _render_remote_code(self, force: bool = False) -> None:
+        s = self.summary
+        if s is None:
             return
-        trusted = list(self.ctx.settings.get("runtime.trusted_remote_code") or [])
-        if checked and self.summary.id not in trusted:
-            trusted.append(self.summary.id)
-        if not checked and self.summary.id in trusted:
-            trusted.remove(self.summary.id)
-        self.ctx.settings.set("runtime.trusted_remote_code", trusted)
-        self.remote_code_banner.setVisible(self.summary.custom_code and not checked)
+        from noelle.runtime import capabilities
+
+        cap = capabilities.analyze(s, self.config or None)
+        if not (cap.remote_code.required or s.custom_code or force):
+            self.remote_notice.hide()
+            return
+        repos = self.ctx.settings.get("runtime.trusted_remote_code") or []
+        if s.id in repos:
+            state = "repo"
+        elif self.ctx.is_trusted(s.id):
+            state = "publisher"
+        elif self._remote_once:
+            state = "once"
+        else:
+            state = "blocked"
+        self.remote_notice.set_state(cap.remote_code.files, cap.remote_code.auto_map, s.namespace, state)
+
+    def _allow_once(self) -> None:
+        self._remote_once = True
+        self._after_trust_change()
+
+    def _trust(self, scope: str) -> None:
+        s = self.summary
+        if s is None:
+            return
+        key, value = ("runtime.trusted_remote_code", s.id) if scope == "repo" else (
+            "runtime.trusted_publishers", s.namespace)
+        if not value:
+            return
+        trusted = list(self.ctx.settings.get(key) or [])
+        if value not in trusted:
+            trusted.append(value)
+        self.ctx.settings.set(key, trusted)
+        self._after_trust_change()
+
+    def _revoke_trust(self) -> None:
+        s = self.summary
+        if s is None:
+            return
+        self._remote_once = False
+        repos = [r for r in (self.ctx.settings.get("runtime.trusted_remote_code") or []) if r != s.id]
+        self.ctx.settings.set("runtime.trusted_remote_code", repos)
+        publishers = list(self.ctx.settings.get("runtime.trusted_publishers") or [])
+        if s.namespace in publishers and QMessageBox.question(
+                self, "Stop trusting this publisher?",
+                f"You trust every repository from {s.namespace}. Remove that trust as well?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            publishers.remove(s.namespace)
+            self.ctx.settings.set("runtime.trusted_publishers", publishers)
+        self._after_trust_change()
+
+    def _review_remote_code(self) -> None:
+        if self.summary is not None:
+            open_external_url(f"https://huggingface.co/{self.summary.id}/tree/main")
+
+    def _after_trust_change(self) -> None:
+        self._render_remote_code()
+        self._render_fit()
+
+    # ========================================================== analysis
+    def _assess(self) -> None:
+        s = self.summary
+        if s is None:
+            return
+        try:
+            self.assessment = self.ctx.assess(s, config=self.config or None, profile=self._profile,
+                                              tokenizer_config=self.tokenizer_config,
+                                              session_trusted=self._remote_once)
+        except Exception:  # analysis must never break the workspace
+            import logging
+
+            logging.getLogger("noelle.ui").exception("analysis failed for %s", s.id)
+            self.assessment = None
+        self.analysis_summary.set_assessment(self.assessment)
+        self.analysis_tab.set_assessment(self.assessment)
+
+    def _set_profile(self, profile: str | None) -> None:
+        profile = profile if profile in advisor.PROFILES else "balanced"
+        if profile == self._profile and self.assessment is not None and self.assessment.profile == profile:
+            return
+        self._profile = profile
+        self.ctx.settings.set("runtime.profile", profile)
+        self.profile.blockSignals(True)
+        self.profile.setCurrentIndex(max(self.profile.findData(profile), 0))
+        self.profile.blockSignals(False)
+        self.analysis_tab.set_profile(profile)
+        self._render_fit()
+        self._apply_profile()
+
+    def _apply_profile(self) -> None:
+        """Point the Build/Precision selectors at the profile's recommendation when it can load as-is."""
+        a = self.assessment
+        option = a.recommended if a is not None else None
+        params = advisor.profile_params(self._profile)
+        panel = getattr(self._playground, "params", None)
+        if params and panel is not None and hasattr(panel, "set_values"):
+            panel.set_values(params)
+        if option is None:
+            return
+        if option.local_variant:
+            self._select_variant(option.local_variant)
+        elif option.status == advisor.READY and self.variant.currentIndex() == 0:
+            index = self.precision.findData(_load_precision(option))
+            if index >= 0 and self.precision.model().item(index).isEnabled():
+                self.precision.setCurrentIndex(index)
+        if option.status != advisor.READY:
+            self.load_status.setText(f"{advisor.PROFILES[self._profile]} profile: {option.label} — "
+                                     f"{option.reason or 'see Analysis'}")
+
+    def _select_variant(self, repo_id: str) -> bool:
+        index = self.variant.findData(repo_id)
+        if index >= 0:
+            self.variant.setCurrentIndex(index)
+        return index >= 0
+
+    def _on_analysis_action(self, action: str, option: advisor.RunOption) -> None:
+        if action == "use" and option.local_variant:
+            self._select_variant(option.local_variant)
+            self.tabs.setCurrentIndex(0)
+        elif action == "load":
+            self.variant.setCurrentIndex(0)
+            index = self.precision.findData(_load_precision(option))
+            if index >= 0:
+                self.precision.setCurrentIndex(index)
+            self._load(force=False)
+        elif action == "quantize":
+            self.tabs.setCurrentWidget(self.optimize_tab)
+            self.ctx.toast(f"Choose “{option.label}” and press Quantize — it builds a local copy once.", "info")
+        elif action == "install":
+            if option.runtime == "llama.cpp":
+                from noelle.app.ui.component_dialog import ensure_llama_cpp
+
+                ensure_llama_cpp(self, self._render_fit, reason=option.reason)
+            else:
+                QMessageBox.information(self, "Optional component", option.reason or "Install the missing package "
+                                        "in the runtime environment, then restart the runtime.")
 
     def _on_downloaded(self) -> None:
         self._refresh_variants()
@@ -682,3 +802,30 @@ class ModelDetailPage(QWidget):
             if hasattr(tab, "shutdown"):
                 tab.shutdown()
 
+
+def _tokenizer_config(ctx: AppContext, summary: ModelSummary, local_dir: Path | None) -> dict[str, Any] | None:
+    """tokenizer_config.json (local copy first) — only used to detect chat templates and tool calling."""
+    if summary.family not in (tasks.TEXT, tasks.VISION):
+        return None
+    text = None
+    if local_dir is not None and (local_dir / "tokenizer_config.json").is_file():
+        try:
+            text = (local_dir / "tokenizer_config.json").read_text(encoding="utf-8")
+        except OSError:
+            text = None
+    if text is None:
+        text = ctx.hf.fetch_file_text(summary.id, "tokenizer_config.json", max_bytes=1_000_000)
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _load_precision(option: advisor.RunOption) -> str:
+    """Full-precision Transformers options load as "auto" (the device's best float: BF16 on recent CUDA GPUs)."""
+    if option.quality == advisor.REFERENCE and option.runtime == "transformers":
+        return "auto"
+    return option.precision

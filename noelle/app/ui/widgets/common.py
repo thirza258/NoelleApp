@@ -99,7 +99,7 @@ def button(text: str = "", icon_name: str | None = None, variant: str | None = N
     if variant:
         widget.setProperty("variant", variant)
     if icon_name:
-        color = icon_color or ("#0C0A1A" if variant == "primary" else theme.TEXT_2)
+        color = icon_color or (theme.ON_ACCENT if variant == "primary" else theme.TEXT_2)
         widget.setIcon(icons.icon(icon_name, color, 16))
         widget.setIconSize(QSize(16, 16))
     if tooltip:
@@ -110,7 +110,7 @@ def button(text: str = "", icon_name: str | None = None, variant: str | None = N
 
 
 def icon_button(icon_name: str, tooltip: str, *, size: int = 32, icon_size: int = 17,
-                color: str = theme.TEXT_2, checkable: bool = False) -> QToolButton:
+                color: str | None = None, checkable: bool = False) -> QToolButton:
     widget = QToolButton()
     widget.setProperty("variant", "ghost")
     widget.setIcon(icons.icon(icon_name, color, icon_size))
@@ -180,7 +180,7 @@ class Avatar(QWidget):
         font.setPixelSize(max(10, int(self.height() * 0.38)))
         font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
-        painter.setPen(color.lighter(130))
+        painter.setPen(color.lighter(130) if theme.IS_DARK else color.darker(135))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, initials[:2])
 
 
@@ -328,11 +328,11 @@ class SearchField(QLineEdit):
 
 
 class Spinner(QWidget):
-    def __init__(self, size: int = 18, color: str = theme.ACCENT) -> None:
+    def __init__(self, size: int = 18, color: str | None = None) -> None:
         super().__init__()
         self.setFixedSize(size, size)
         self._angle = 0
-        self._color = QColor(color)
+        self._color = QColor(color or theme.ACCENT)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._advance)

@@ -125,6 +125,8 @@ class Worker:
         self.current: Job | None = None
         self.subscribers: dict[bytes, float] = {}
         self.started = time.time()
+        self._backends: dict[str, bool] | None = None
+        self._backends_at = 0.0
         self.running = True
         self.runtime_ready = threading.Event()
         self.init_error: str | None = None
@@ -244,6 +246,9 @@ class Worker:
             self.send(identity, request_id, Event.RESULT, {"stopped": stopped})
         elif cmd == Command.RAG_LIST_COLLECTIONS:
             self.send(identity, request_id, Event.RESULT, {"collections": self.rag().list_collections()})
+        elif cmd == Command.RAG_LIST_DOCUMENTS:
+            collection = payload.get("collection") if isinstance(payload.get("collection"), str) else None
+            self.send(identity, request_id, Event.RESULT, {"documents": self.rag().list_documents(collection)})
         elif cmd == Command.QUANTIZE_CAPABILITIES:
             from noelle.runtime import quantization_engine
 
@@ -299,7 +304,25 @@ class Worker:
             vm = psutil.virtual_memory()
             data["memory"] = {"system_total": vm.total, "system_available": vm.available,
                               "process_rss": psutil.Process().memory_info().rss}
+        data["backends"] = self.backends()
         return data
+
+    def backends(self) -> dict[str, bool]:
+        """Optional engines available in *this* environment (the UI may run in another one).
+
+        Re-checked every 30 s so a component installed while the app runs shows up.
+        """
+        now = time.time()
+        if self._backends is None or now - self._backends_at > 30:
+            from noelle.runtime.capabilities import detect_backends
+
+            try:
+                self._backends = detect_backends()
+            except Exception:  # telemetry must never take the worker down
+                log.debug("backend detection failed", exc_info=True)
+                self._backends = {}
+            self._backends_at = now
+        return self._backends
 
     # --------------------------------------------------------------- GPU lane
     def _init_runtime(self) -> None:
@@ -748,7 +771,8 @@ def _cmd_rag_ingest(worker: Worker, ctx: JobContext) -> None:
     with worker.models.pinned(embedder.key):
         result = rag.ingest(collection, files, embedder.engine, embedding_model=model_id,
                             chunk_tokens=int(ctx.payload.get("chunk_tokens") or settings.get("rag.chunk_tokens", 512)),
-                            overlap=int(ctx.payload.get("chunk_overlap") or settings.get("rag.chunk_overlap", 64)),
+                            overlap=int(ctx.payload["chunk_overlap"] if ctx.payload.get("chunk_overlap") is not None
+                                        else settings.get("rag.chunk_overlap", 64)),
                             progress=lambda data: ctx.emit(Event.PROGRESS, data), stop_event=ctx.stop_event)
     ctx.emit(Event.RESULT, result)
 
@@ -770,6 +794,18 @@ def _cmd_rag_query(worker: Worker, ctx: JobContext) -> None:
 
 def _cmd_rag_delete(worker: Worker, ctx: JobContext) -> None:
     ctx.emit(Event.RESULT, {"deleted": worker.rag().delete_collection(str(ctx.payload.get("collection") or ""))})
+
+
+def _cmd_rag_delete_document(worker: Worker, ctx: JobContext) -> None:
+    from noelle.runtime.errors import BadRequest
+
+    collection = str(ctx.payload.get("collection") or "").strip()
+    paths_ = [p for p in ctx.payload.get("paths") or [] if isinstance(p, str)]
+    if not collection or not paths_:
+        raise BadRequest("A collection name and at least one document path are required.")
+    rag = worker.rag()
+    removed = sum(1 for path in paths_ if rag.delete_document(collection, path))
+    ctx.emit(Event.RESULT, {"collection": collection, "removed": removed})
 
 
 def _cmd_web_search(worker: Worker, ctx: JobContext) -> None:
@@ -829,6 +865,13 @@ def _cmd_benchmark(worker: Worker, ctx: JobContext) -> None:
     ctx.emit(Event.GENERATION_COMPLETE, summary)
 
 
+def _cmd_eval(worker: Worker, ctx: JobContext) -> None:
+    from noelle.runtime.evaluation_runner import run_evaluation
+
+    summary = run_evaluation(worker.models, ctx.payload, stop_event=ctx.stop_event, emit=ctx.emit)
+    ctx.emit(Event.GENERATION_COMPLETE, summary)
+
+
 _HANDLERS: dict[Command, Callable[[Worker, JobContext], None]] = {
     Command.LOAD_MODEL: _cmd_load,
     Command.UNLOAD_MODEL: _cmd_unload,
@@ -843,12 +886,14 @@ _HANDLERS: dict[Command, Callable[[Worker, JobContext], None]] = {
     Command.RAG_INGEST: _cmd_rag_ingest,
     Command.RAG_QUERY: _cmd_rag_query,
     Command.RAG_DELETE_COLLECTION: _cmd_rag_delete,
+    Command.RAG_DELETE_DOCUMENT: _cmd_rag_delete_document,
     Command.WEB_SEARCH: _cmd_web_search,
     Command.QUANTIZE: _cmd_quantize,
     Command.LORA_LOAD: _cmd_lora_load,
     Command.LORA_SET_ADAPTER: _cmd_lora_set,
     Command.LORA_LIST: _cmd_lora_list,
     Command.RUN_BENCHMARK: _cmd_benchmark,
+    Command.RUN_EVAL: _cmd_eval,
 }
 
 

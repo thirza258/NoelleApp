@@ -172,7 +172,7 @@ class OptimizePanel(QScrollArea):
         record = self.ctx.registry.get_model(summary.id, source="hub") if summary else None
         if summary is None or record is None:
             return
-        payload = {**record.worker_payload(), "method": method}
+        payload = {**record.worker_payload(self.ctx.settings), "method": method}
         clear_layout(self.result_row)
         self.progress.show()
         self.progress_text.setText("Starting…")

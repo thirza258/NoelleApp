@@ -21,15 +21,26 @@ from noelle.app import icons, theme
 from noelle.app.ui.widgets.common import Spinner, icon_button, label, open_external_url
 from noelle.runtime.preflight import format_bytes
 
-DOC_CSS = f"""
-code {{ font-family: Menlo, monospace; background-color: #0F131A; color: #D7DCE4; }}
-pre {{ font-family: Menlo, monospace; background-color: #0F131A; color: #D7DCE4; padding: 8px; }}
+def doc_css() -> str:
+    """Rich-text style for rendered markdown, in the active palette."""
+    return f"""
+code {{ font-family: Menlo, monospace; background-color: {theme.CODE_BG}; color: {theme.CODE_TEXT}; }}
+pre {{ font-family: Menlo, monospace; background-color: {theme.CODE_BG}; color: {theme.CODE_TEXT}; padding: 8px; }}
 a {{ color: {theme.ACCENT}; }}
 h1, h2, h3 {{ color: {theme.TEXT}; }}
 blockquote {{ color: {theme.TEXT_MUTED}; }}
 table {{ border-collapse: collapse; }}
 th, td {{ border: 1px solid {theme.BORDER_STRONG}; padding: 4px 8px; }}
 """
+
+
+def markdown_html(text: str) -> str | None:
+    """CommonMark (+ tables, strikethrough) to HTML so ``doc_css`` styles code blocks; raw HTML stays escaped."""
+    try:
+        from markdown_it import MarkdownIt
+    except ImportError:
+        return None
+    return MarkdownIt("commonmark", {"html": False}).enable("table").enable("strikethrough").render(text)
 
 
 class MarkdownView(QTextBrowser):
@@ -45,13 +56,17 @@ class MarkdownView(QTextBrowser):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("QTextBrowser { background: transparent; border: none; padding: 0; }")
         self.document().setDocumentMargin(0)
-        self.document().setDefaultStyleSheet(DOC_CSS)
+        self.document().setDefaultStyleSheet(doc_css())
         self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.document().contentsChanged.connect(self._fit)
         self.setFixedHeight(22)
 
     def set_markdown(self, text: str) -> None:
-        self.document().setMarkdown(text or "")
+        html = markdown_html(text or "")
+        if html is None:
+            self.document().setMarkdown(text or "")  # Qt's importer ignores the style sheet (no code styling)
+        else:
+            self.document().setHtml(html)
         self._fit()
 
     def resizeEvent(self, event: Any) -> None:  # noqa: N802
@@ -167,7 +182,7 @@ class MessageView(QFrame):
     def set_error(self, message: str, hint: str | None = None) -> None:
         self.set_busy(False)
         text = f"**{message}**" + (f"\n\n{hint}" if hint else "")
-        self.setStyleSheet(f"MessageView {{ background: {theme.DANGER_SOFT}; border: 1px solid rgba(240,100,95,0.4);"
+        self.setStyleSheet(f"MessageView {{ background: {theme.DANGER_SOFT}; border: 1px solid {theme.DANGER_BORDER};"
                            " border-radius: 12px; }")
         self.set_text(text)
 

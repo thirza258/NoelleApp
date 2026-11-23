@@ -420,3 +420,60 @@ def test_cli_create_errors_and_usage(capsys: pytest.CaptureFixture[str], fake_po
     out = capsys.readouterr().out
     assert "Successfully installed" in out and "Created 'ok' (base, server)" in out
     assert em.main(_cli(["env"])) == 2
+
+
+# ------------------------------------------------------------------ lockfiles
+def test_lockfile_export_and_import_round_trip(tmp_path: Any, monkeypatch: Any) -> None:
+    import subprocess
+    import sys as _sys
+
+    from noelle.runtime import environment_manager as em
+
+    root = em.env_dir("lab")
+    root.mkdir(parents=True)
+    em.write_manifest(root, {"name": "lab", "profiles": ["base", "rag"], "platform": "darwin-arm64",
+                             "torch_version": "2.9.0", "device": "mps"})
+    monkeypatch.setattr(em, "python_for", lambda name: Path(_sys.executable))
+    freeze = "torch==2.9.0\n-e git+https://example.invalid/noelle#egg=noelle\nnoelle==1.0.0\nnumpy==2.3.1\n"
+
+    def fake_run(cmd: list[str], **_kw: Any) -> Any:
+        out = freeze if "freeze" in cmd else "3.12.4\n"
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(em.subprocess, "run", fake_run)
+    lock = em.export_environment("lab")
+    assert lock["packages"] == ["torch==2.9.0", "numpy==2.3.1"]  # no editable or local Noelle pins
+    assert lock["python"] == "3.12.4" and lock["profiles"] == ["base", "rag"] and lock["noelle_environment"] == 1
+    path = tmp_path / "noelle-env.yaml"
+    path.write_text(em.lock_text(lock), encoding="utf-8")
+
+    installed: list[list[str]] = []
+
+    def fake_venv(target: Path, **_kw: Any) -> Path:
+        target.mkdir(parents=True)
+        return Path(_sys.executable)
+
+    def fake_streaming(cmd: list[str], **_kw: Any) -> tuple[int, list[str]]:
+        installed.append(cmd)
+        return 0, []
+
+    monkeypatch.setattr(em, "create_venv", fake_venv)
+    monkeypatch.setattr(em, "run_streaming", fake_streaming)
+    info = em.create_from_lock(path, name="lab-copy")
+    assert info["name"] == "lab-copy" and installed and installed[0][-2] == "-r"
+    pinned = Path(installed[0][-1]).read_text(encoding="utf-8").split()
+    assert pinned == ["torch==2.9.0", "numpy==2.3.1"]
+    with pytest.raises(em.EnvironmentManagerError, match="already exists"):
+        em.create_from_lock(path, name="lab-copy")
+
+
+def test_lockfile_rejects_url_requirements(tmp_path: Any) -> None:
+    from noelle.runtime import environment_manager as em
+
+    path = tmp_path / "evil.yaml"
+    path.write_text("noelle_environment: 1\npackages:\n  - 'evil @ https://example.invalid/x.whl'\n", encoding="utf-8")
+    with pytest.raises(em.EnvironmentManagerError, match="non-index requirement"):
+        em.read_lock(path)
+    path.write_text("name: x\n", encoding="utf-8")
+    with pytest.raises(em.EnvironmentManagerError, match="not a Noelle environment lockfile"):
+        em.read_lock(path)

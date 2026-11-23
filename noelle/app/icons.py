@@ -92,8 +92,12 @@ def _svg(name: str, color: str) -> bytes:
             f'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{body}</svg>').encode()
 
 
+def pixmap(name: str, color: str | None = None, size: int = 18, scale: float = 2.0) -> QPixmap:
+    return _pixmap(name, color or theme.TEXT_2, size, scale)
+
+
 @lru_cache(maxsize=512)
-def pixmap(name: str, color: str = theme.TEXT_2, size: int = 18, scale: float = 2.0) -> QPixmap:
+def _pixmap(name: str, color: str, size: int, scale: float) -> QPixmap:
     renderer = QSvgRenderer(QByteArray(_svg(name, color)))
     px = int(size * scale)
     image = QImage(px, px, QImage.Format.Format_ARGB32_Premultiplied)
@@ -107,12 +111,22 @@ def pixmap(name: str, color: str = theme.TEXT_2, size: int = 18, scale: float = 
     return result
 
 
+def icon(name: str, color: str | None = None, size: int = 18, active_color: str | None = None) -> QIcon:
+    return _icon(name, color or theme.TEXT_2, size, active_color or theme.TEXT, theme.TEXT_FAINT)
+
+
+def clear_cache() -> None:
+    """Forget rendered icons (called when the palette changes)."""
+    _pixmap.cache_clear()
+    _icon.cache_clear()
+
+
 @lru_cache(maxsize=512)
-def icon(name: str, color: str = theme.TEXT_2, size: int = 18, active_color: str | None = None) -> QIcon:
+def _icon(name: str, color: str, size: int, active_color: str, disabled_color: str) -> QIcon:
     qicon = QIcon()
     qicon.addPixmap(pixmap(name, color, size), QIcon.Mode.Normal, QIcon.State.Off)
-    qicon.addPixmap(pixmap(name, active_color or theme.TEXT, size), QIcon.Mode.Normal, QIcon.State.On)
-    qicon.addPixmap(pixmap(name, theme.TEXT_FAINT, size), QIcon.Mode.Disabled, QIcon.State.Off)
+    qicon.addPixmap(pixmap(name, active_color, size), QIcon.Mode.Normal, QIcon.State.On)
+    qicon.addPixmap(pixmap(name, disabled_color, size), QIcon.Mode.Disabled, QIcon.State.Off)
     return qicon
 
 

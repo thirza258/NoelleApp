@@ -467,6 +467,24 @@ class RagEngine:
         row = self._collection_row(str(name or "").strip())
         return self._describe(row) if row is not None else None
 
+    def list_documents(self, collection: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Documents per collection (all collections when ``collection`` is None)."""
+        conn = self._connect(create=False)
+        if conn is None:
+            return {}
+        sql = ("SELECT c.name AS collection, d.path, d.name, d.size_bytes, d.chunks, d.added_at FROM documents d "
+               "JOIN collections c ON c.id = d.collection_id")
+        params: tuple[Any, ...] = ()
+        if collection:
+            sql += " WHERE c.name = ?"
+            params = (str(collection).strip(),)
+        catalog: dict[str, list[dict[str, Any]]] = {}
+        for row in conn.execute(sql + " ORDER BY d.name COLLATE NOCASE, d.path", params).fetchall():
+            catalog.setdefault(str(row["collection"]), []).append({
+                "path": str(row["path"]), "name": str(row["name"]), "size_bytes": int(row["size_bytes"] or 0),
+                "chunks": int(row["chunks"] or 0), "added_at": row["added_at"]})
+        return catalog
+
     def ingest(self, collection: str, files: Sequence[str], embedder: Any, *, embedding_model: str,
                chunk_tokens: int = 512, overlap: int = 64, progress: ProgressFn | None = None,
                stop_event: threading.Event | None = None) -> dict[str, Any]:

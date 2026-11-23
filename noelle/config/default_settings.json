@@ -20,7 +20,9 @@
     "keep_models_loaded": true,
     "offline": true,
     "heartbeat_timeout_s": 20,
-    "trusted_remote_code": []
+    "trusted_remote_code": [],
+    "trusted_publishers": [],
+    "profile": "balanced"
   },
   "generation": {
     "system_prompt": "You are a helpful assistant.",
@@ -35,7 +37,8 @@
     "chunk_tokens": 512,
     "chunk_overlap": 64,
     "top_k": 4,
-    "context_chars": 6000
+    "context_chars": 6000,
+    "knowledge_bases": {}
   },
   "web_search": {
     "provider": "searxng",
@@ -50,7 +53,8 @@
     "port": 8765,
     "api_key": null,
     "default_model": null,
-    "autostart": false
+    "autostart": false,
+    "aliases": {}
   },
   "quantization": {
     "llama_cpp_dir": null
@@ -60,6 +64,7 @@
     "version": null
   },
   "ui": {
+    "theme": "system",
     "hero_collapse_threshold": 120,
     "hero_width": 380,
     "hero_animation_ms": 250

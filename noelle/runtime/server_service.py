@@ -4,11 +4,22 @@ Endpoints (everything under ``/v1`` requires ``Authorization: Bearer <key>``
 when ``NOELLE_SERVER_API_KEY`` is set):
 
 * ``GET  /health``                   server and worker liveness
-* ``GET  /v1/models``                registry models (OpenAI list shape plus ``task``)
-* ``GET  /v1/models/{id}``           one model
+* ``GET  /v1/models``                registry models, aliases and ``auto`` (OpenAI list shape plus ``task``)
+* ``GET  /v1/models/{id}``           one model, alias or ``auto``
 * ``POST /v1/chat/completions``      GENERATE_STREAM, streamed as server-sent events or not
 * ``POST /v1/embeddings``            EMBED
 * ``POST /v1/audio/transcriptions``  TRANSCRIBE (multipart upload)
+* ``POST /v1/images/generations``    GENERATE_IMAGE, returned inline as ``b64_json``
+* ``GET  /v1/knowledge``             RAG collections (not OpenAI)
+* ``POST /v1/knowledge/query``       RAG_QUERY: the best passages of one collection (not OpenAI)
+
+A ``model`` is an exact ``api_name``, an alias from the ``server.aliases``
+setting (re-read whenever settings.json changes, so edits in the desktop app
+apply at once), a registry fallback (repo id, ``repo:precision``) or ``auto``,
+which picks a model per request (:func:`route_auto`). Responses carry
+``x-noelle-model`` (the model that served the request); ``auto`` adds
+``x-noelle-routed-model`` and ``x-noelle-route-reason``. Generated images are
+deleted from disk once encoded into the response.
 
 The server never loads a model itself: each request becomes one worker command
 over ZeroMQ (:class:`noelle.runtime.client.AsyncWorkerClient`), so API traffic
@@ -42,7 +53,7 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Sequence, TypeVar
 
 import anyio
 import uvicorn
@@ -55,6 +66,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from noelle import __version__, paths
 from noelle.app.services.model_registry import ModelRecord, ModelRegistry, get_registry
+from noelle.config import Settings, get_settings
 from noelle.runtime import tasks
 from noelle.runtime.client import AsyncWorkerClient, WorkerError, read_discovery_file
 from noelle.runtime.protocol import AUTH_ENV, TERMINAL_EVENTS, Command, ErrorCode, Event, new_id
@@ -72,7 +84,16 @@ STOP_TIMEOUT_S = 5.0
 DISCONNECT_POLL_S = 0.25
 ACCESS_LOG_MAX_BYTES = 10 * 1024 * 1024
 TRANSCRIPTION_FORMATS = ("json", "text", "verbose_json")
+LIST_LOADED_TIMEOUT_S = 2.0  # routing only; a slow or missing worker just skips the "loaded model" rule
+AUTO_MODEL = "auto"
+ALIAS_PATTERN = r"[a-z0-9][a-z0-9._-]{0,63}"  # full match; the Server page validates names with the same rule
+CODE_ALIAS, CHAT_ALIAS, EMBED_ALIAS, IMAGE_ALIAS = "noelle-code", "noelle-chat", "noelle-embed", "noelle-image"
+IMAGE_SIDE_MIN, IMAGE_SIDE_MAX = 256, 2048
+IMAGE_MAX_STEPS = 150
+IMAGE_MAX_SEED = 2**32 - 1
+KNOWLEDGE_TOP_K, KNOWLEDGE_MAX_TOP_K = 4, 20
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+_URL_SAFE = "/:@-._~!$&'()*+,;="
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +260,14 @@ async def watch_disconnect(request: Request, call: WorkerCall, work: Callable[[]
     return outcome["value"]
 
 
+async def _result(request: Request, call: WorkerCall) -> dict[str, Any]:
+    """The ``RESULT`` payload of ``call``; the worker request is stopped if the HTTP client goes away."""
+    try:
+        return await watch_disconnect(request, call, call.result)
+    finally:
+        await call.close()
+
+
 class _EventStreamResponse(StreamingResponse):
     """StreamingResponse that always closes its generator (so cleanup runs even when cancelled mid-send)."""
 
@@ -275,13 +304,33 @@ def _number(body: dict[str, Any], key: str, low: float, high: float) -> float | 
     return float(value)
 
 
-def _integer(body: dict[str, Any], key: str, low: int | None = None) -> int | None:
+def _integer(body: dict[str, Any], key: str, low: int | None = None, high: int | None = None) -> int | None:
     value = body.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, int) or (low is not None and value < low):
-        raise ApiError(400, f"'{key}' must be an integer" + (f" >= {low}." if low is not None else "."), param=key)
+    if (isinstance(value, bool) or not isinstance(value, int) or (low is not None and value < low)
+            or (high is not None and value > high)):
+        if low is not None and high is not None:
+            bounds = f" between {low} and {high}."
+        elif low is not None or high is not None:
+            bounds = f" >= {low}." if low is not None else f" <= {high}."
+        else:
+            bounds = "."
+        raise ApiError(400, f"'{key}' must be an integer{bounds}", param=key)
     return value
+
+
+def image_size(value: Any) -> tuple[int, int] | None:
+    """OpenAI ``size`` ("WIDTHxHEIGHT") -> ``(width, height)``; None when omitted (the worker's default, 512x512)."""
+    if value is None:
+        return None
+    match = re.fullmatch(r"(\d{1,5})x(\d{1,5})", value) if isinstance(value, str) else None
+    if match:
+        width, height = int(match[1]), int(match[2])
+        if all(IMAGE_SIDE_MIN <= side <= IMAGE_SIDE_MAX and side % 8 == 0 for side in (width, height)):
+            return width, height
+    raise ApiError(400, f"'size' must be 'WIDTHxHEIGHT' with each side a multiple of 8 between {IMAGE_SIDE_MIN} "
+                        f"and {IMAGE_SIDE_MAX}, for example '512x512'.", param="size")
 
 
 def chat_messages(raw: Any) -> list[dict[str, Any]]:
@@ -395,6 +444,24 @@ def _save_upload(filename: str, data: bytes) -> Path:
     return Path(name)
 
 
+def _take_image(path: Any) -> str:
+    """Base64 of the PNG the worker wrote. The file is deleted: API images are returned inline, never kept."""
+    if not isinstance(path, str) or not path:
+        raise ApiError(502, "The model worker did not return an image.", type="server_error", code="worker_error")
+    image = Path(path)
+    try:
+        data = image.read_bytes()
+    except OSError as exc:
+        raise ApiError(502, f"Cannot read the generated image: {exc.strerror or exc}", type="server_error",
+                       code="worker_error") from None
+    if image.resolve().parent == paths.outputs_dir().resolve():  # only ever delete in the worker's output folder
+        try:
+            image.unlink()
+        except OSError:
+            log.debug("could not delete %s", image, exc_info=True)
+    return base64.b64encode(data).decode("ascii")
+
+
 def _encode_vector(vector: list[float], encoding: str) -> list[float] | str:
     if encoding == "base64":  # little-endian float32, what the official clients decode
         return base64.b64encode(struct.pack(f"<{len(vector)}f", *vector)).decode("ascii")
@@ -504,7 +571,7 @@ class AccessLogMiddleware:
                        (time.perf_counter() - started) * 1000.0)
 
     def write(self, method: str, path: str, status: int, duration_ms: float) -> None:
-        safe_path = urllib.parse.quote(path, safe="/:@-._~!$&'()*+,;=")
+        safe_path = urllib.parse.quote(path, safe=_URL_SAFE)
         stamp = datetime.now().astimezone().isoformat(timespec="milliseconds")
         line = f"{stamp} {method} {safe_path} {status} {duration_ms:.1f}ms\n"
         try:
@@ -519,17 +586,147 @@ class AccessLogMiddleware:
 
 
 # ---------------------------------------------------------------------------
+# model names: aliases and "auto" routing
+# ---------------------------------------------------------------------------
+
+_CODE_RE = re.compile(
+    r"```"  # fenced code block
+    r"|^[ \t]*(?:async[ \t]+)?def[ \t]+\w+[ \t]*\("  # Python function
+    r"|^[ \t]*(?:export[ \t]+|public[ \t]+)?class[ \t]+[A-Za-z_]\w*[ \t]*(?:[(:{<]|extends\b|implements\b)"
+    r"|\bfunction\b[ \t]*\w*[ \t]*\("  # JavaScript function
+    r"|\bSELECT\s"  # SQL, upper case only
+    r"|^[ \t]*#include[ \t]*[<\"]"  # C / C++
+    r"|(?i:\bwrite\s+(?:a|an|me\s+a|some)\s+(?:python|javascript|typescript|rust|go|java)\s+"
+    r"(?:function|script|program)s?\b)",
+    re.MULTILINE,
+)
+ROUTE_KINDS = {"chat": tasks.TEXT, "embeddings": tasks.EMBEDDING, "images": tasks.DIFFUSION}
+_ROUTED_AFTER_LOADED = ("rag-embedding-model", "recent-model")  # rules a loaded model takes precedence over
+_NO_ROUTE = {
+    "chat": "'auto' found no downloaded text model. Download a text-generation model first.",
+    "embeddings": "'auto' found no downloaded embedding model. Download a sentence-similarity model first.",
+    "images": "'auto' found no downloaded diffusion model. Download a text-to-image model first.",
+}
+
+
+def looks_like_code(text: str) -> bool:
+    """Code fences, a def/class/function/#include, upper-case SQL, or a "write a python function" request."""
+    return _CODE_RE.search(text) is not None
+
+
+def model_family(record: ModelRecord) -> str | None:
+    """The record's family; a model without a pipeline tag is treated as a text model."""
+    return record.family or (tasks.TEXT if not record.pipeline_tag else None)
+
+
+def clean_aliases(raw: Any) -> dict[str, str]:
+    """``server.aliases`` without malformed entries: names must match ALIAS_PATTERN and "auto" is reserved."""
+    if not isinstance(raw, dict):
+        return {}
+    return {name: target for name, target in raw.items()
+            if isinstance(name, str) and isinstance(target, str) and target and name != AUTO_MODEL
+            and re.fullmatch(ALIAS_PATTERN, name)}
+
+
+def _last_used(entry: Mapping[str, Any]) -> float:
+    value = entry.get("last_used") or entry.get("loaded_at")
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def route_auto(kind: str, text: str, aliases: Mapping[str, str], records: Sequence[ModelRecord],
+               loaded: Sequence[Mapping[str, Any]], settings: Mapping[str, Any]) -> tuple[ModelRecord, str] | None:
+    """Choose the model for ``"model": "auto"``. Pure: no I/O.
+
+    ``kind`` is a :data:`ROUTE_KINDS` key; ``text`` is what the user wrote (only chat reads it); ``records``
+    are the downloaded models, most recently used first; ``loaded`` are the worker's LIST_LOADED entries;
+    ``settings`` maps ``server.default_model`` and ``rag.embedding_model`` to their values. Returns
+    ``(record, reason)``, or None when no downloaded model fits. The first matching rule wins:
+
+    * chat: ``code-alias`` (the text looks like code and ``noelle-code`` is set), ``chat-alias``
+      (``noelle-chat``), ``default-model`` (``server.default_model``), ``loaded-model`` (the most recently
+      used text model loaded in the worker), ``recent-model`` (the most recently used text model)
+    * embeddings: ``embed-alias`` (``noelle-embed``), ``loaded-model``, ``rag-embedding-model``
+      (``rag.embedding_model``), ``recent-model``
+    * images: ``image-alias`` (``noelle-image``), ``recent-model``
+
+    An alias, setting or loaded model only counts when it names a downloaded model of the right family.
+    """
+    family = ROUTE_KINDS[kind]
+    candidates = [r for r in records if model_family(r) == family]
+
+    def alias(name: str) -> ModelRecord | None:  # targets are exact api names
+        target = aliases.get(name)
+        return next((r for r in candidates if r.api_name == target), None)
+
+    def code_alias() -> ModelRecord | None:
+        record = alias(CODE_ALIAS)
+        return record if record is not None and looks_like_code(text) else None
+
+    def setting(key: str) -> ModelRecord | None:  # an api name, or a repo id
+        name = settings.get(key)
+        if not isinstance(name, str) or not name:
+            return None
+        return (next((r for r in candidates if r.api_name == name), None)
+                or next((r for r in candidates if r.repo_id == name), None))
+
+    def loaded_model() -> ModelRecord | None:  # the worker loads record.worker_payload(): repo id + precision
+        for entry in sorted(loaded, key=_last_used, reverse=True):
+            match = next((r for r in candidates if r.repo_id == entry.get("model_id")
+                          and r.precision == (entry.get("precision") or "auto")), None)
+            if match is not None:
+                return match
+        return None
+
+    def recent() -> ModelRecord | None:
+        return candidates[0] if candidates else None
+
+    rules: dict[str, Callable[[], ModelRecord | None]]
+    if kind == "chat":
+        rules = {"code-alias": code_alias, "chat-alias": lambda: alias(CHAT_ALIAS),
+                 "default-model": lambda: setting("server.default_model"), "loaded-model": loaded_model,
+                 "recent-model": recent}
+    elif kind == "embeddings":
+        rules = {"embed-alias": lambda: alias(EMBED_ALIAS), "loaded-model": loaded_model,
+                 "rag-embedding-model": lambda: setting("rag.embedding_model"), "recent-model": recent}
+    else:
+        rules = {"image-alias": lambda: alias(IMAGE_ALIAS), "recent-model": recent}
+    for reason, rule in rules.items():
+        record = rule()
+        if record is not None:
+            return record, reason
+    return None
+
+
+@dataclass
+class Resolved:
+    """The model serving a request; ``route_reason`` is set when the client asked for ``auto``."""
+
+    record: ModelRecord
+    route_reason: str | None = None
+
+    def headers(self) -> dict[str, str]:
+        served = urllib.parse.quote(self.record.api_name, safe=_URL_SAFE)  # header values must be latin-1
+        headers = {"x-noelle-model": served}
+        if self.route_reason is not None:
+            headers.update({"x-noelle-routed-model": served, "x-noelle-route-reason": self.route_reason})
+        return headers
+
+
+# ---------------------------------------------------------------------------
 # application
 # ---------------------------------------------------------------------------
 
 
 class _ServerState:
     def __init__(self, worker_endpoint: str | None, token: str | None, registry: ModelRegistry | None,
-                 api_key: str | None) -> None:
+                 api_key: str | None, settings: Settings | None) -> None:
         self._endpoint = worker_endpoint
         self.token = token
         self._registry = registry
         self.api_key = api_key
+        self._settings = settings
+        self._settings_seen: tuple[Settings, tuple[int, int, int] | None] | None = None
+        self._settings_lock = threading.Lock()
 
     def endpoint(self) -> str | None:
         """The fixed endpoint, or the live worker's discovery file (follows worker restarts)."""
@@ -553,13 +750,42 @@ class _ServerState:
     def registry(self) -> ModelRegistry:
         return self._registry if self._registry is not None else get_registry()
 
-    def find(self, name: str) -> ModelRecord | None:
-        """Exact ``api_name`` first: the registry's lookup also matches ``repo_id`` and may pick another precision."""
+    def settings(self) -> Settings:
+        """Settings, re-read whenever settings.json changes: the desktop app edits it while the server runs."""
+        settings = self._settings if self._settings is not None else get_settings()
+        try:
+            info = settings.path.stat()
+            stamp: tuple[int, int, int] | None = (info.st_mtime_ns, info.st_size, info.st_ino)
+        except OSError:
+            stamp = None
+        with self._settings_lock:
+            seen = self._settings_seen
+            if seen is None or seen[0] is not settings or seen[1] != stamp:
+                settings.reload()  # saves replace the file, so the inode changes even within one mtime tick
+                self._settings_seen = (settings, stamp)
+        return settings
+
+    def aliases(self) -> dict[str, str]:
+        return clean_aliases(self.settings().get("server.aliases"))
+
+    def lookup(self, name: str) -> tuple[ModelRecord | None, str | None]:
+        """``(record, alias target)`` for a model name: exact ``api_name``, then an alias, then registry fallbacks.
+
+        The exact name goes first because the registry's own lookup also matches ``repo_id`` and may pick
+        another precision. An alias whose target is gone gives ``(None, target)``.
+        """
         registry = self.registry()
-        for record in registry.list_models():
+        records = registry.list_models()
+        for record in records:
             if record.api_name == name:
-                return record
-        return registry.find_by_api_name(name)
+                return record, None
+        target = self.aliases().get(name)
+        if target is not None:
+            return next((r for r in records if r.api_name == target), None), target
+        return registry.find_by_api_name(name), None
+
+    def find(self, name: str) -> ModelRecord | None:
+        return self.lookup(name)[0]
 
     def listable(self) -> list[ModelRecord]:
         seen: set[str] = set()
@@ -573,20 +799,74 @@ class _ServerState:
             records.append(record)
         return records
 
-    async def resolve(self, name: Any, families: tuple[str, ...], purpose: str) -> ModelRecord:
+    def model_cards(self) -> list[dict[str, Any]]:
+        """``/v1/models``: downloaded models, then aliases whose target is downloaded, then ``auto``."""
+        records = self.listable()
+        by_name = {r.api_name: r for r in records}
+        cards = [_model_card(r) for r in records]
+        for alias, target in sorted(self.aliases().items()):
+            if alias not in by_name and target in by_name:  # a model's own name wins over an alias
+                cards.append({**_model_card(by_name[target]), "id": alias, "owned_by": "noelle-alias",
+                              "parent": target})
+        if any(model_family(r) == tasks.TEXT for r in records):
+            cards.append({"id": AUTO_MODEL, "object": "model", "created": 0, "owned_by": "noelle-router",
+                          "task": None})
+        return cards
+
+    def model_card(self, name: str) -> dict[str, Any] | None:
+        card = next((c for c in self.model_cards() if c["id"] == name), None)
+        if card is None:  # registry fallbacks (repo id, repo:precision) and models whose folder is gone
+            record = self.find(name)
+            card = _model_card(record) if record is not None else None
+        return card
+
+    async def loaded_models(self) -> list[dict[str, Any]]:
+        """The worker's LIST_LOADED entries; [] when it cannot answer quickly (routing then skips that rule)."""
+        try:
+            payload = await self.client().call(Command.LIST_LOADED, timeout=LIST_LOADED_TIMEOUT_S)
+        except Exception as exc:
+            log.debug("LIST_LOADED failed, routing without it: %s", exc)
+            return []
+        models = payload.get("models")
+        return [m for m in models if isinstance(m, dict)] if isinstance(models, list) else []
+
+    def _route_inputs(self) -> tuple[list[ModelRecord], dict[str, str], dict[str, Any]]:
+        settings = self.settings()
+        values = {key: settings.get(key) for key in ("server.default_model", "rag.embedding_model")}
+        return self.listable(), clean_aliases(settings.get("server.aliases")), values
+
+    async def route(self, kind: str, text: str) -> Resolved:
+        records, aliases, values = await run_in_threadpool(self._route_inputs)
+        routed = route_auto(kind, text, aliases, records, [], values)
+        if kind != "images" and routed is not None and routed[1] in _ROUTED_AFTER_LOADED:
+            loaded = await self.loaded_models()  # only asked when a loaded model could change the answer
+            if loaded:
+                routed = route_auto(kind, text, aliases, records, loaded, values)
+        if routed is None:
+            raise ApiError(404, _NO_ROUTE[kind], code="model_not_found", param="model")
+        return Resolved(*routed)
+
+    async def resolve(self, name: Any, families: tuple[str, ...], purpose: str, *, route: str | None = None,
+                      text: str = "") -> Resolved:
+        """The model for a request's ``model`` field; ``route`` (a :data:`ROUTE_KINDS` key) enables ``auto``."""
         if not isinstance(name, str) or not name.strip():
             raise ApiError(400, "'model' is required.", param="model")
-        record = await run_in_threadpool(self.find, name.strip())
+        name = name.strip()
+        if name == AUTO_MODEL and route is not None:
+            return await self.route(route, text)
+        record, target = await run_in_threadpool(self.lookup, name)
         if record is None:
+            if target is not None:
+                raise ApiError(404, f"The alias '{name}' points to '{target}', which is not downloaded. Change the "
+                                    "alias on the Server page.", code="model_not_found", param="model")
             available = [r.api_name for r in await run_in_threadpool(self.listable)]
             raise ApiError(404, f"The model '{name}' does not exist. Available models: "
                                 f"{', '.join(available) if available else '(none)'}.",
                            code="model_not_found", param="model")
-        family = record.family or (tasks.TEXT if not record.pipeline_tag else None)
-        if family not in families:
+        if model_family(record) not in families:
             raise ApiError(400, f"'{record.api_name}' is a {record.pipeline_tag or 'unknown'} model and cannot "
                                 f"serve {purpose}.", code="model_not_supported", param="model")
-        return record
+        return Resolved(record)
 
 
 def _model_card(record: ModelRecord) -> dict[str, Any]:
@@ -595,9 +875,10 @@ def _model_card(record: ModelRecord) -> dict[str, Any]:
 
 
 def create_app(worker_endpoint: str | None, token: str | None, *, registry: ModelRegistry | None = None,
-               api_key: str | None = None) -> FastAPI:
-    """Build the FastAPI app. ``worker_endpoint=None`` follows the worker discovery file."""
-    state = _ServerState(worker_endpoint, token, registry, api_key)
+               api_key: str | None = None, settings: Settings | None = None) -> FastAPI:
+    """Build the FastAPI app. ``worker_endpoint=None`` follows the worker discovery file; ``registry`` and
+    ``settings`` default to the ones under ``NOELLE_HOME``."""
+    state = _ServerState(worker_endpoint, token, registry, api_key, settings)
     app = FastAPI(title="Noelle API", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.noelle = state
     app.add_middleware(AccessLogMiddleware, log_path=paths.logs_dir() / "server-access.log")
@@ -651,15 +932,14 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
 
     @v1.get("/models")
     async def list_models() -> dict[str, Any]:
-        records = await run_in_threadpool(state.listable)
-        return {"object": "list", "data": [_model_card(r) for r in records]}
+        return {"object": "list", "data": await run_in_threadpool(state.model_cards)}
 
     @v1.get("/models/{model_id:path}")
     async def get_model(model_id: str) -> dict[str, Any]:
-        record = await run_in_threadpool(state.find, model_id)
-        if record is None:
+        card = await run_in_threadpool(state.model_card, model_id)
+        if card is None:
             raise ApiError(404, f"The model '{model_id}' does not exist.", code="model_not_found", param="model")
-        return _model_card(record)
+        return card
 
     @v1.post("/chat/completions")
     async def chat_completions(request: Request) -> Response:
@@ -669,8 +949,12 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
         if body.get("n") not in (None, 1):
             raise ApiError(400, "Only n=1 is supported.", param="n")
         stream_options = body.get("stream_options") if isinstance(body.get("stream_options"), dict) else {}
-        record = await state.resolve(body.get("model"), (tasks.TEXT,), "chat completions")
-        call = state.call(Command.GENERATE_STREAM, {**record.worker_payload(), "messages": messages,
+        # "auto" reads every user turn, so a coding conversation stays on one model instead of swapping per turn.
+        asked = "\n".join(m["content"] for m in messages if m["role"] == "user")
+        resolved = await state.resolve(body.get("model"), (tasks.TEXT,), "chat completions", route="chat",
+                                       text=asked)
+        record = resolved.record
+        call = state.call(Command.GENERATE_STREAM, {**record.worker_payload(state.settings()), "messages": messages,
                                                     "params": params})
         meta = _ChatMeta(id=f"chatcmpl-{call.request_id}", model=record.api_name, created=int(time.time()),
                          include_usage=bool(stream_options.get("include_usage")))
@@ -681,17 +965,18 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
                 first = await watch_disconnect(request, call, call.first_output)
                 handed_off = True
                 return _EventStreamResponse(_chat_events(call, first, meta), media_type="text/event-stream",
-                                            headers=_SSE_HEADERS)
+                                            headers={**_SSE_HEADERS, **resolved.headers()})
             streamed, done = await watch_disconnect(request, call, call.generation)
             metrics = done.get("metrics") or {}
             text = done.get("text") if isinstance(done.get("text"), str) else streamed
-            return JSONResponse(meta.completion(text, _finish_reason(metrics), _usage(metrics)))
+            return JSONResponse(meta.completion(text, _finish_reason(metrics), _usage(metrics)),
+                                headers=resolved.headers())
         finally:
             if not handed_off:
                 await call.close()
 
     @v1.post("/embeddings")
-    async def embeddings(request: Request) -> dict[str, Any]:
+    async def embeddings(request: Request) -> Response:
         body = await _json_body(request)
         inputs = body.get("input")
         if isinstance(inputs, str):
@@ -702,17 +987,14 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
         encoding = body.get("encoding_format") or "float"
         if encoding not in ("float", "base64"):
             raise ApiError(400, "'encoding_format' must be 'float' or 'base64'.", param="encoding_format")
-        record = await state.resolve(body.get("model"), (tasks.EMBEDDING,), "embeddings")
-        call = state.call(Command.EMBED, {**record.worker_payload(), "inputs": inputs})
-        try:
-            result = await watch_disconnect(request, call, call.result)
-        finally:
-            await call.close()
+        resolved = await state.resolve(body.get("model"), (tasks.EMBEDDING,), "embeddings", route="embeddings")
+        record = resolved.record
+        result = await _result(request, state.call(Command.EMBED, {**record.worker_payload(state.settings()), "inputs": inputs}))
         tokens = int(result.get("prompt_tokens") or 0)
         data = [{"object": "embedding", "index": i, "embedding": _encode_vector(vector, encoding)}
                 for i, vector in enumerate(result.get("embeddings") or [])]
-        return {"object": "list", "data": data, "model": record.api_name,
-                "usage": {"prompt_tokens": tokens, "total_tokens": tokens}}
+        return JSONResponse({"object": "list", "data": data, "model": record.api_name,
+                             "usage": {"prompt_tokens": tokens, "total_tokens": tokens}}, headers=resolved.headers())
 
     @v1.post("/audio/transcriptions")
     async def transcriptions(request: Request) -> Response:
@@ -728,30 +1010,89 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
             raise ApiError(400, f"'response_format' must be one of: {', '.join(TRANSCRIPTION_FORMATS)}.",
                            param="response_format")
         language = (fields.get("language") or "").strip() or None
-        record = await state.resolve(fields.get("model"), (tasks.ASR,), "transcriptions")
+        resolved = await state.resolve(fields.get("model"), (tasks.ASR,), "transcriptions")
         filename, data = files["file"]
         audio = await run_in_threadpool(_save_upload, filename, data)
         try:
-            call = state.call(Command.TRANSCRIBE, {**record.worker_payload(), "audio_path": str(audio),
-                                                   "language": language,
-                                                   "timestamps": response_format == "verbose_json"})
-            try:
-                result = await watch_disconnect(request, call, call.result)
-            finally:
-                await call.close()
+            result = await _result(request, state.call(Command.TRANSCRIBE, {
+                **resolved.record.worker_payload(state.settings()), "audio_path": str(audio), "language": language,
+                "timestamps": response_format == "verbose_json"}))
         finally:
             audio.unlink(missing_ok=True)
         text = str(result.get("text") or "")
         if response_format == "text":
-            return PlainTextResponse(text)
+            return PlainTextResponse(text, headers=resolved.headers())
         if response_format == "json":
-            return JSONResponse({"text": text})
+            return JSONResponse({"text": text}, headers=resolved.headers())
         segments = [{"id": i, "seek": 0, "start": chunk.get("start") or 0.0, "end": chunk.get("end") or 0.0,
                      "text": chunk.get("text", ""), "tokens": [], "temperature": 0.0, "avg_logprob": 0.0,
                      "compression_ratio": 0.0, "no_speech_prob": 0.0}
                     for i, chunk in enumerate(result.get("chunks") or [])]
         return JSONResponse({"task": "transcribe", "language": language or "", "text": text,
-                             "duration": float(result.get("duration_s") or 0.0), "segments": segments})
+                             "duration": float(result.get("duration_s") or 0.0), "segments": segments},
+                            headers=resolved.headers())
+
+    @v1.post("/images/generations")
+    async def image_generations(request: Request) -> Response:
+        body = await _json_body(request)
+        prompt = body.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ApiError(400, "'prompt' must be a non-empty string.", param="prompt")
+        n = body.get("n")
+        if n is not None and (isinstance(n, bool) or n != 1):
+            raise ApiError(400, "Only n=1 is supported.", param="n")
+        response_format = body.get("response_format")
+        if response_format == "url":
+            raise ApiError(400, "response_format 'url' is not supported: this server returns images inline as "
+                                "'b64_json'.", param="response_format")
+        if response_format not in (None, "b64_json"):
+            raise ApiError(400, "'response_format' must be 'b64_json'.", param="response_format")
+        size = image_size(body.get("size"))
+        seed = _integer(body, "seed", 0, IMAGE_MAX_SEED)  # non-standard, like steps
+        steps = _integer(body, "steps", 1, IMAGE_MAX_STEPS)
+        resolved = await state.resolve(body.get("model"), (tasks.DIFFUSION,), "image generation", route="images")
+        payload: dict[str, Any] = {**resolved.record.worker_payload(state.settings()), "prompt": prompt,
+                                   "preview_every": 0}  # no per-step preview PNGs over IPC
+        if size is not None:
+            payload["width"], payload["height"] = size
+        if seed is not None:
+            payload["seed"] = seed
+        if steps is not None:
+            payload["steps"] = steps
+        result = await _result(request, state.call(Command.GENERATE_IMAGE, payload))
+        image = await run_in_threadpool(_take_image, result.get("image_path"))
+        return JSONResponse({"created": int(time.time()), "data": [{"b64_json": image, "revised_prompt": None}]},
+                            headers=resolved.headers())
+
+    async def collections(request: Request) -> list[dict[str, Any]]:
+        result = await _result(request, state.call(Command.RAG_LIST_COLLECTIONS, {}))
+        found = result.get("collections")
+        return [c for c in found if isinstance(c, dict)] if isinstance(found, list) else []
+
+    @v1.get("/knowledge")
+    async def list_knowledge(request: Request) -> dict[str, Any]:
+        return {"object": "list", "data": await collections(request)}
+
+    @v1.post("/knowledge/query")
+    async def query_knowledge(request: Request) -> dict[str, Any]:
+        body = await _json_body(request)
+        name = body.get("collection")
+        if not isinstance(name, str) or not name.strip():
+            raise ApiError(400, "'collection' must be a non-empty string.", param="collection")
+        query = body.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise ApiError(400, "'query' must be a non-empty string.", param="query")
+        top_k = _integer(body, "top_k", 1, KNOWLEDGE_MAX_TOP_K)
+        name = name.strip()
+        known = [str(c.get("name")) for c in await collections(request)]
+        if name not in known:  # the worker would say 400; a 404 that lists the choices helps tools pick again
+            raise ApiError(404, f"The collection '{name}' does not exist. Available collections: "
+                                f"{', '.join(known) if known else '(none)'}.", code="collection_not_found",
+                           param="collection")
+        result = await _result(request, state.call(Command.RAG_QUERY, {
+            "collection": name, "query": query, "top_k": KNOWLEDGE_TOP_K if top_k is None else top_k}))
+        hits = result.get("hits")
+        return {"object": "list", "collection": name, "data": hits if isinstance(hits, list) else []}
 
     app.include_router(v1)
     return app

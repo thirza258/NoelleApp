@@ -37,8 +37,8 @@ def api(worker_process, text_model_path: Path, tmp_path: Path) -> Iterator[opena
 def test_models_endpoint(api: openai.OpenAI) -> None:
     models = api.models.list()
     ids = [m.id for m in models.data]
-    assert ids == [TEXT_MODEL]
-    assert models.data[0].owned_by == "local"
+    assert ids == [TEXT_MODEL, "auto"]  # the router entry follows the real models
+    assert models.data[0].owned_by == "local" and models.data[1].owned_by == "noelle-router"
     assert models.data[0].model_extra.get("task") == "text-generation"
 
 

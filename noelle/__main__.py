@@ -5,6 +5,10 @@
 ``noelle server``     run the OpenAI-compatible API server (spawned by the studio)
 ``noelle download``   download a Hub repository with JSON progress on stdout
 ``noelle env``        manage isolated runtime environments
+``noelle mcp``        Model Context Protocol server on stdio (for Claude Code, Cursor, ...)
+``noelle eval``       Evaluation Lab from the terminal (thresholds/baselines for CI)
+``noelle analyze``    compatibility score and run options for a Hub repository
+``noelle run``        one prompt to a local model, streamed to stdout
 
 A frozen (PyInstaller) build re-executes itself with these subcommands, so every
 child process is the same binary.
@@ -18,7 +22,7 @@ import sys
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="noelle", description="Noelle Desktop AI Studio")
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(dest="command", metavar="{ui,worker,server,download,setup,eval,analyze,run,mcp,env}")
     sub.add_parser("ui", help="launch the desktop studio")
 
     from noelle.runtime import worker_service
@@ -48,9 +52,22 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--import-hf-token", metavar="FILE", default=None,
                        help="read a Hugging Face token from FILE into the OS credential store, then delete FILE")
 
-    pyrun = sub.add_parser("pyrun", help=argparse.SUPPRESS)  # frozen builds: run a helper script (GGUF converter)
+    from noelle import lab_cli
+
+    lab_cli.add_eval_arguments(sub.add_parser("eval", help="evaluate local models on datasets (CI-friendly)"))
+    lab_cli.add_analyze_arguments(sub.add_parser("analyze", help="score how well a Hub model runs on this machine"))
+    lab_cli.add_run_arguments(sub.add_parser("run", help="send one prompt to a local model and stream the reply"))
+
+    mcp = sub.add_parser("mcp", help="run the Model Context Protocol server on stdio")
+    mcp.add_argument("--api-url", default=None,
+                     help="Noelle API server base URL (default: http://<server.host>:<server.port> from settings)")
+    mcp.add_argument("--print-config", action="store_true",
+                     help="print a JSON snippet for an MCP client's configuration and exit")
+
+    pyrun = sub.add_parser("pyrun")  # frozen builds: run a helper script (GGUF converter); hidden from --help
     pyrun.add_argument("script")
     pyrun.add_argument("script_args", nargs=argparse.REMAINDER)
+    sub._choices_actions = [a for a in sub._choices_actions if a.dest != "pyrun"]
 
     env = sub.add_parser("env", help="manage isolated runtime environments")
     env_sub = env.add_subparsers(dest="env_command")
@@ -63,17 +80,27 @@ def build_parser() -> argparse.ArgumentParser:
     remove.add_argument("name")
     verify = env_sub.add_parser("verify")
     verify.add_argument("name")
+    export = env_sub.add_parser("export", help="write a pinned lockfile (noelle-env.yaml)")
+    export.add_argument("name")
+    export.add_argument("--output", "-o", default=None)
+    lock_import = env_sub.add_parser("import", help="create an environment from a lockfile")
+    lock_import.add_argument("file")
+    lock_import.add_argument("--name", default=None)
+    lock_import.add_argument("--python", default=None)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "-h", "--help"}
+    commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "mcp", "eval", "analyze", "run",
+                "-h", "--help"}
     if not argv or argv[0] not in commands:
         # Default to the UI; leave Qt's own arguments (e.g. -platform offscreen) for QApplication.
         from noelle.app.main import run
 
         return run(argv)
+    if argv[0] not in ("worker", "server", "download", "pyrun"):
+        _attach_windows_console()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "ui":
@@ -98,6 +125,15 @@ def main(argv: list[str] | None = None) -> int:
         from noelle.app.main import run
 
         return run(["--setup"])
+    if args.command in ("eval", "analyze", "run"):
+        from noelle import lab_cli
+
+        handler = {"eval": lab_cli.run_eval, "analyze": lab_cli.run_analyze, "run": lab_cli.run_prompt}[args.command]
+        return handler(args)
+    if args.command == "mcp":
+        from noelle.runtime import mcp_server
+
+        return mcp_server.main(args)
     if args.command == "pyrun":
         import runpy
         from pathlib import Path
@@ -112,6 +148,19 @@ def main(argv: list[str] | None = None) -> int:
         return environment_manager.main(args)
     parser.print_help()
     return 1
+
+
+def _attach_windows_console() -> None:
+    """Windowed (GUI) Windows builds start without a console: borrow the terminal that launched them so
+    ``Noelle.exe eval …`` prints. Pipes from a parent process (e.g. an MCP client) are left alone."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False) or sys.stdout is not None:
+        return
+    import ctypes
+
+    if ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)  # noqa: SIM115 - process lifetime
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)  # noqa: SIM115
+        sys.stdin = open("CONIN$", encoding="utf-8")  # noqa: SIM115
 
 
 def import_hf_token(path: str) -> int:

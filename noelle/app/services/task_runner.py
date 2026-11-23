@@ -56,6 +56,19 @@ def _log_debug(text: str) -> None:
     logging.getLogger("noelle.tasks").debug(text)
 
 
+def _guard(callback: Callable[..., None]) -> Callable[..., None]:
+    """Drop a result whose receiving widget was closed while the task ran (a page or dialog that is gone)."""
+
+    def call(*args: Any) -> None:
+        try:
+            callback(*args)
+        except RuntimeError as exc:
+            if "already deleted" not in str(exc):
+                raise
+
+    return call
+
+
 class TaskRunner(QObject):
     """Submits tasks and keeps them (and their signal objects) alive until ``finished``
     has been delivered on the GUI thread; otherwise queued signals to plain-function
@@ -72,13 +85,13 @@ class TaskRunner(QObject):
         task = Task(fn, *args, with_progress=on_progress is not None, **kwargs)
         task.setAutoDelete(False)
         if on_result:
-            task.signals.result.connect(on_result)
+            task.signals.result.connect(_guard(on_result))
         if on_error:
-            task.signals.error.connect(on_error)
+            task.signals.error.connect(_guard(on_error))
         if on_progress:
-            task.signals.progress.connect(on_progress)
+            task.signals.progress.connect(_guard(on_progress))
         if on_finished:
-            task.signals.finished.connect(on_finished)
+            task.signals.finished.connect(_guard(on_finished))
         task.signals.finished.connect(lambda t=task: self._live.discard(t))
         self._live.add(task)
         self.pool.start(task)

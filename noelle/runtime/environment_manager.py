@@ -63,9 +63,9 @@ PROFILES: dict[str, Profile] = {
         Profile("base", "Inference runtime: PyTorch, transformers and the worker's IPC dependencies.",
                 ("torch>=2.4", "transformers>=4.50", "accelerate>=1.0", "safetensors>=0.4", "numpy>=1.26",
                  "pillow>=10", "soundfile>=0.12", "pyzmq>=26", "psutil>=5.9", "huggingface_hub>=1.0",
-                 "keyring>=25"),
+                 "keyring>=25", "pyyaml>=6", "httpx>=0.27"),
                 ("torch", "transformers", "accelerate", "safetensors", "numpy", "PIL", "soundfile", "zmq",
-                 "psutil", "huggingface_hub", "keyring")),
+                 "psutil", "huggingface_hub", "keyring", "yaml", "httpx")),
         Profile("diffusion", "Text-to-image and image-to-image pipelines (diffusers).",
                 ("diffusers>=0.30",), ("diffusers",)),
         Profile("rag", "Document chat: sentence embeddings, PDF/DOCX readers and the sqlite-vec index.",
@@ -420,6 +420,115 @@ def create_environment(name: str, profiles: Iterable[str] | None, *, python: str
     return _describe(target, manifest)
 
 
+# ---------------------------------------------------------------------------
+# lockfiles: export an environment exactly, rebuild it elsewhere
+# ---------------------------------------------------------------------------
+
+LOCK_FORMAT = 1
+
+
+def freeze(python: str | os.PathLike[str], timeout: float = 120.0) -> list[str]:
+    """``pip freeze`` of an interpreter, without editable/local installs of Noelle itself."""
+    result = subprocess.run([str(python), "-m", "pip", "freeze", "--disable-pip-version-check"], capture_output=True,
+                            text=True, timeout=timeout, env=_pip_env())
+    if result.returncode != 0:
+        raise EnvironmentManagerError(f"pip freeze failed: {_last(result.stderr.splitlines())}")
+    pins = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", "-e ", "--")):
+            continue
+        if line.lower().split("==")[0].split(" @ ")[0].strip() in ("noelle", "noelle-studio"):
+            continue  # the app ships with the environment's runner; never pin it from a local checkout
+        pins.append(line)
+    return pins
+
+
+def export_environment(name: str) -> dict[str, Any]:
+    """A lock document (``noelle-env.yaml``): Python, platform, profiles and every pinned package."""
+    name = validate_name(name)
+    root = env_dir(name)
+    manifest = read_manifest(root)
+    if manifest is None:
+        raise EnvironmentManagerError(f"No environment named '{name}'.")
+    interpreter = python_for(name)
+    version = subprocess.run([str(interpreter), "-c", "import sys; print(sys.version.split()[0])"],
+                             capture_output=True, text=True, timeout=60).stdout.strip()
+    return {
+        "noelle_environment": LOCK_FORMAT,
+        "name": name,
+        "python": version or None,
+        "platform": manifest.get("platform"),
+        "profiles": manifest.get("profiles") or [],
+        "torch": manifest.get("torch_version"),
+        "device": manifest.get("device"),
+        "noelle": __version__,
+        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "packages": freeze(interpreter),
+    }
+
+
+def lock_text(lock: dict[str, Any]) -> str:
+    import yaml
+
+    return "# Noelle runtime environment lockfile — rebuild with: noelle env import <this file>\n" + yaml.safe_dump(
+        lock, sort_keys=False, allow_unicode=True)
+
+
+def read_lock(path: str | os.PathLike[str]) -> dict[str, Any]:
+    import yaml
+
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("noelle_environment") != LOCK_FORMAT:
+        raise EnvironmentManagerError(f"{path} is not a Noelle environment lockfile.")
+    packages = data.get("packages")
+    if not isinstance(packages, list) or not all(isinstance(p, str) for p in packages):
+        raise EnvironmentManagerError("The lockfile has no valid 'packages' list.")
+    for package in packages:
+        if package.startswith(("-", "git+", "http:", "https:", "file:")) or " @ " in package:
+            raise EnvironmentManagerError(f"Refusing a non-index requirement in the lockfile: {package!r}")
+    return data
+
+
+def create_from_lock(path: str | os.PathLike[str], *, name: str | None = None, python: str | None = None,
+                     progress: OnLine | None = None, stop_event: threading.Event | None = None) -> dict[str, Any]:
+    """Create an environment with exactly the packages pinned in a lockfile."""
+    lock = read_lock(path)
+    name = validate_name(name or str(lock.get("name") or "imported"))
+    target = paths.environments_dir() / name
+    if target.exists() or target.is_symlink():
+        raise EnvironmentManagerError(f"Environment '{name}' already exists at {target}.")
+    current = f"{sys.platform}-{platform.machine()}"
+    say = progress or (lambda _line: None)
+    if lock.get("platform") and lock["platform"] != current:
+        say(f"Note: the lockfile was exported on {lock['platform']}; this machine is {current}.")
+    base = python or default_base_python()
+    paths.environments_dir().mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    try:
+        say(f"Creating virtual environment '{name}' with {base}")
+        interpreter = create_venv(target, python=base, on_line=say, stop_event=stop_event)
+        requirements = target / "noelle-lock-requirements.txt"
+        requirements.write_text("\n".join(lock["packages"]) + "\n", encoding="utf-8")
+        say(f"Installing {len(lock['packages'])} pinned packages")
+        code, tail = run_streaming([str(interpreter), "-m", "pip", "install", "--disable-pip-version-check",
+                                    "--no-input", "-r", str(requirements)], on_line=say, stop_event=stop_event,
+                                   env=_pip_env())
+        if code != 0:
+            raise EnvironmentManagerError(f"pip install failed (exit code {code}): {_last(tail)}")
+        manifest = {"name": name, "path": str(target), "python": str(interpreter), "base_python": base,
+                    "profiles": list(lock.get("profiles") or []), "requirements": list(lock["packages"]),
+                    "created_at": started, "install_seconds": round(time.time() - started, 1), "verified": False,
+                    "verified_at": None, "torch_version": None, "device": None, "noelle_version": __version__,
+                    "platform": current, "imported_from": str(path)}
+        write_manifest(target, manifest)
+    except BaseException:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+    say(f"Environment '{name}' is ready at {target}")
+    return _describe(target, manifest)
+
+
 _VERIFY_SCRIPT = r"""
 import importlib.util, json, sys
 report = {"python_version": sys.version.split()[0], "executable": sys.executable, "errors": []}
@@ -547,6 +656,19 @@ def main(args: argparse.Namespace) -> int:
                 return 0
             print(f"No environment named '{args.name}'.", file=sys.stderr)
             return 1
+        if command == "export":
+            text = lock_text(export_environment(args.name))
+            if getattr(args, "output", None):
+                Path(args.output).write_text(text, encoding="utf-8")
+                print(f"Wrote {args.output}")
+            else:
+                print(text, end="")
+            return 0
+        if command == "import":
+            info = create_from_lock(args.file, name=getattr(args, "name", None), python=getattr(args, "python", None),
+                                    progress=lambda line: print(line, flush=True))
+            print(f"Created '{info['name']}' from {args.file}. Check it with: noelle env verify {info['name']}")
+            return 0
         if command == "verify":
             result = verify_environment(args.name)
             state = "OK" if result["verified"] else "FAILED"
@@ -562,5 +684,5 @@ def main(args: argparse.Namespace) -> int:
     except (EnvironmentManagerError, Cancelled) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print("usage: noelle env {create,list,remove,verify} ...", file=sys.stderr)
+    print("usage: noelle env {create,list,remove,verify,export,import} ...", file=sys.stderr)
     return 2

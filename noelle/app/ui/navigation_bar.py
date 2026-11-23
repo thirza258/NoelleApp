@@ -10,10 +10,13 @@ from noelle.app.ui.widgets.common import button, icon_button, label
 
 PAGES = [
     ("discover", "Discover", "compass"),
+    ("mission", "Mission", "sparkles"),
     ("workspace", "Workspace", "cpu"),
+    ("knowledge", "Knowledge", "book"),
+    ("evaluate", "Evaluate", "activity"),
     ("compare", "Compare", "columns"),
     ("storage", "Storage", "database"),
-    ("server", "API Server", "server"),
+    ("server", "API", "server"),
 ]
 
 

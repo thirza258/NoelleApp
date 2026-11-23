@@ -1,0 +1,7 @@
+{"_dataset": {"name": "chat-latency", "title": "Chat latency", "category": "performance", "description": "Everyday prompts without scoring \u2014 measures time to first token, speed and memory."}}
+{"id": "p01", "prompt": "Explain what a KV cache is in two sentences.", "scorer": "none", "max_new_tokens": 192}
+{"id": "p02", "prompt": "Give three tips for writing clear emails.", "scorer": "none", "max_new_tokens": 192}
+{"id": "p03", "prompt": "Summarise the plot of Romeo and Juliet in one paragraph.", "scorer": "none", "max_new_tokens": 192}
+{"id": "p04", "prompt": "What is the difference between RAM and storage?", "scorer": "none", "max_new_tokens": 192}
+{"id": "p05", "prompt": "Write a haiku about autumn.", "scorer": "none", "max_new_tokens": 192}
+{"id": "p06", "prompt": "Describe how a bicycle works to a ten-year-old.", "scorer": "none", "max_new_tokens": 192}
