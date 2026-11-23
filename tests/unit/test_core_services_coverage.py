@@ -158,13 +158,26 @@ def test_client_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     class Resp:
         def __init__(self, status: int, content: bytes) -> None:
             self.status_code, self.content = status, content
+            self.read_chunks = 0
 
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *_exc: Any) -> None:
+            return None
+
+        def iter_bytes(self) -> Any:
+            for start in range(0, len(self.content), 4):
+                self.read_chunks += 1
+                yield self.content[start:start + 4]
+
+    huge = Resp(200, b"x" * 10_000)
     responses = {"config.json": Resp(200, b'{"max_position_embeddings": 4096}'), "README.md": Resp(200, b"# Card"),
-                 "bad.json": Resp(200, b"{not json")}
+                 "bad.json": Resp(200, b"{not json"), "HUGE.md": huge}
 
     class Session:
-        def get(self, url: str, **kwargs: Any) -> Resp:
-            assert kwargs["follow_redirects"] is True
+        def stream(self, method: str, url: str, **kwargs: Any) -> Resp:
+            assert method == "GET" and kwargs["follow_redirects"] is True
             return responses.get(url.rsplit("/", 1)[-1], Resp(404, b""))
 
     import huggingface_hub.utils as hub_utils
@@ -173,6 +186,8 @@ def test_client_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.fetch_config("org/x") == {"max_position_embeddings": 4096}
     assert client.fetch_readme("org/x") == "# Card"
     assert client.fetch_file_text("org/x", "missing.txt") is None
+    assert client.fetch_file_text("org/x", "HUGE.md", max_bytes=10) == "x" * 10
+    assert huge.read_chunks == 3  # stopped streaming instead of reading all 10 000 bytes
     monkeypatch.setitem(responses, "config.json", Resp(200, b"{not json"))
     assert client.fetch_config("org/x") == {}
 

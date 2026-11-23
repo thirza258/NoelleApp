@@ -312,14 +312,21 @@ class HFClient:
         from huggingface_hub.utils import build_hf_headers, get_session
 
         url = hf_hub_url(repo_id, filename, endpoint=self.endpoint)
+        data = bytearray()
         try:
-            response = get_session().get(url, headers=build_hf_headers(token=self.token), timeout=20,
-                                         follow_redirects=True)
+            # Stream and stop at max_bytes: a repository file can be arbitrarily large, and
+            # buffering the whole body first would let one oversized README exhaust memory.
+            with get_session().stream("GET", url, headers=build_hf_headers(token=self.token), timeout=20,
+                                      follow_redirects=True) as response:
+                if response.status_code != 200:
+                    return None
+                for chunk in response.iter_bytes():
+                    data.extend(chunk[: max_bytes - len(data)])
+                    if len(data) >= max_bytes:
+                        break
         except Exception:
             return None
-        if response.status_code != 200:
-            return None
-        return response.content[:max_bytes].decode("utf-8", errors="replace")
+        return bytes(data).decode("utf-8", errors="replace")
 
     def fetch_config(self, repo_id: str) -> dict[str, Any]:
         import json
