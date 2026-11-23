@@ -27,6 +27,9 @@ from noelle.runtime.protocol import Command, ErrorCode, Event, error_payload, ma
 TOKEN = "worker-secret"
 
 
+LOCAL = "http://127.0.0.1"  # the API only answers loopback Host headers
+
+
 class FakeWorker:
     """ROUTER socket on a thread answering like the real worker, keyed on ``model_id``."""
 
@@ -183,7 +186,7 @@ def registry(tmp_path: Path) -> Iterator[ModelRegistry]:
 
 @pytest.fixture
 def client(worker: FakeWorker, registry: ModelRegistry) -> Iterator[TestClient]:
-    with TestClient(srv.create_app(worker.endpoint, TOKEN, registry=registry)) as test_client:
+    with TestClient(srv.create_app(worker.endpoint, TOKEN, registry=registry), base_url=LOCAL) as test_client:
         yield test_client
 
 
@@ -217,7 +220,7 @@ def test_health(client: TestClient) -> None:
 
 
 def test_health_degraded_without_worker(registry: ModelRegistry) -> None:
-    with TestClient(srv.create_app(None, TOKEN, registry=registry)) as client:
+    with TestClient(srv.create_app(None, TOKEN, registry=registry), base_url=LOCAL) as client:
         response = client.get("/health")
     assert response.status_code == 503
     assert response.json()["worker"]["reachable"] is False
@@ -388,14 +391,14 @@ def test_unknown_route_is_openai_shaped(client: TestClient) -> None:
 
 
 def test_wrong_worker_token_is_a_server_error(worker: FakeWorker, registry: ModelRegistry) -> None:
-    with TestClient(srv.create_app(worker.endpoint, "not-the-token", registry=registry)) as client:
+    with TestClient(srv.create_app(worker.endpoint, "not-the-token", registry=registry), base_url=LOCAL) as client:
         response = chat(client)
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "worker_unauthorized"
 
 
 def test_worker_not_running(registry: ModelRegistry, monkeypatch: pytest.MonkeyPatch) -> None:
-    with TestClient(srv.create_app(None, TOKEN, registry=registry)) as client:
+    with TestClient(srv.create_app(None, TOKEN, registry=registry), base_url=LOCAL) as client:
         response = chat(client)
     assert response.status_code == 503 and response.json()["error"]["code"] == "worker_unavailable"
 
@@ -403,7 +406,7 @@ def test_worker_not_running(registry: ModelRegistry, monkeypatch: pytest.MonkeyP
     silent = zmq.Context.instance().socket(zmq.ROUTER)  # bound but never answers
     port = silent.bind_to_random_port("tcp://127.0.0.1")
     try:
-        with TestClient(srv.create_app(f"tcp://127.0.0.1:{port}", TOKEN, registry=registry)) as client:
+        with TestClient(srv.create_app(f"tcp://127.0.0.1:{port}", TOKEN, registry=registry), base_url=LOCAL) as client:
             response = chat(client)
     finally:
         silent.close(linger=0)
@@ -413,14 +416,14 @@ def test_worker_not_running(registry: ModelRegistry, monkeypatch: pytest.MonkeyP
 def test_endpoint_from_discovery_file(worker: FakeWorker, registry: ModelRegistry) -> None:
     paths.runtime_dir().mkdir(parents=True, exist_ok=True)
     (paths.runtime_dir() / "worker.json").write_text(json.dumps({"host": "127.0.0.1", "port": worker.port}))
-    with TestClient(srv.create_app(None, TOKEN, registry=registry)) as client:
+    with TestClient(srv.create_app(None, TOKEN, registry=registry), base_url=LOCAL) as client:
         response = chat(client)
     assert response.status_code == 200 and response.json()["choices"][0]["message"]["content"] == "Hello world!"
 
 
 def test_api_key(worker: FakeWorker, registry: ModelRegistry) -> None:
     app = srv.create_app(worker.endpoint, TOKEN, registry=registry, api_key="sk-local-123")
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         assert client.get("/health").status_code == 200  # liveness stays open
         for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic sk-local-123"}):
             response = client.get("/v1/models", headers=headers)

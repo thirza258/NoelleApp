@@ -34,6 +34,9 @@ HITS = [{"source": f"doc{i}.md", "path": str(Path("docs") / f"doc{i}.md"), "chun
          "page": None, "text": f"passage {i}", "score": round(1.0 - i / 10, 6)} for i in range(6)]
 
 
+LOCAL = "http://127.0.0.1"  # the API only answers loopback Host headers
+
+
 class GatewayWorker(FakeWorker):
     """FakeWorker plus LIST_LOADED, RAG_LIST_COLLECTIONS (light: no ACK), GENERATE_IMAGE and RAG_QUERY."""
 
@@ -114,7 +117,7 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def client(worker: GatewayWorker, registry: ModelRegistry, settings: Settings) -> Iterator[TestClient]:
-    with TestClient(srv.create_app(worker.endpoint, TOKEN, registry=registry, settings=settings)) as test_client:
+    with TestClient(srv.create_app(worker.endpoint, TOKEN, registry=registry, settings=settings), base_url=LOCAL) as test_client:
         yield test_client
 
 
@@ -226,7 +229,7 @@ def test_auto_is_listed_only_with_a_text_model(worker: GatewayWorker, tmp_path: 
     reg = ModelRegistry(tmp_path / "embed-only.db")
     reg.upsert_model(ModelRecord(repo_id="fake/embed", pipeline_tag="sentence-similarity"))
     app = srv.create_app(worker.endpoint, TOKEN, registry=reg, settings=Settings(tmp_path / "s.json"))
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         assert "auto" not in cards(client)
         assert client.get("/v1/models/auto").status_code == 404
         response = chat(client, "auto")
@@ -418,7 +421,7 @@ def test_auto_embeddings(client: TestClient, worker: GatewayWorker, settings: Se
 
 
 def test_auto_without_a_worker_still_routes(registry: ModelRegistry, settings: Settings) -> None:
-    with TestClient(srv.create_app(None, TOKEN, registry=registry, settings=settings)) as client:
+    with TestClient(srv.create_app(None, TOKEN, registry=registry, settings=settings), base_url=LOCAL) as client:
         response = chat(client, "auto")  # LIST_LOADED cannot run; the request then fails like any other
     assert response.status_code == 503 and response.json()["error"]["code"] == "worker_unavailable"
 
@@ -606,7 +609,7 @@ def test_knowledge_and_images_need_the_api_key(worker: GatewayWorker, registry: 
     auth = {"Authorization": "Bearer sk-gw"}
     query = {"collection": "docs", "query": "x"}
     image = {"model": "fake/sd", "prompt": "a cat"}
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         assert client.get("/v1/knowledge").status_code == 401
         assert client.post("/v1/knowledge/query", json=query).status_code == 401
         assert client.post("/v1/images/generations", json=image).status_code == 401
@@ -617,7 +620,7 @@ def test_knowledge_and_images_need_the_api_key(worker: GatewayWorker, registry: 
 
 
 def test_knowledge_without_worker(registry: ModelRegistry, settings: Settings) -> None:
-    with TestClient(srv.create_app(None, TOKEN, registry=registry, settings=settings)) as client:
+    with TestClient(srv.create_app(None, TOKEN, registry=registry, settings=settings), base_url=LOCAL) as client:
         response = client.get("/v1/knowledge")
     assert response.status_code == 503 and response.json()["error"]["code"] == "worker_unavailable"
 
@@ -638,3 +641,26 @@ def test_trust_given_in_the_app_applies_to_api_requests(client: TestClient, work
     assert chat(client, "fake/coder").status_code == 200
     first, second = worker.of(Command.GENERATE_STREAM)
     assert first["payload"]["trust_remote_code"] is False and second["payload"]["trust_remote_code"] is True
+
+
+@pytest.mark.parametrize("host, allowed", [
+    ("127.0.0.1:8765", True), ("localhost:8765", True), ("LOCALHOST", True), ("[::1]:8765", True),
+    ("evil.example:8765", False), ("127.0.0.1.evil.example", False), ("", False), ("[::1", False),
+])
+def test_dns_rebinding_is_blocked_by_the_host_check(client: TestClient, host: str, allowed: bool) -> None:
+    for path in ("/v1/models", "/v1/knowledge", "/health"):
+        response = client.get(path, headers={"host": host})
+        if allowed:
+            assert response.status_code != 421, (path, response.text)
+        else:
+            assert response.status_code == 421 and response.json()["error"]["code"] == "invalid_host", path
+
+
+def test_json_endpoints_require_a_json_content_type(client: TestClient, worker: GatewayWorker) -> None:
+    body = '{"collection": "docs", "query": "reset", "top_k": 2}'
+    for path in ("/v1/knowledge/query", "/v1/chat/completions"):
+        response = client.post(path, content=body, headers={"content-type": "text/plain"})
+        assert response.status_code == 415 and response.json()["error"]["code"] == "unsupported_media_type"
+    assert not worker.of(Command.RAG_QUERY) and not worker.of(Command.GENERATE_STREAM)  # nothing reached the worker
+    ok = client.post("/v1/knowledge/query", content=body, headers={"content-type": "application/json; charset=utf-8"})
+    assert ok.status_code == 200, ok.text
