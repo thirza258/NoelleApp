@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage — Noelle docs</title>
+  <meta name="description" content="See where disk space goes, clean up unused models and partial downloads, and move the model cache.">
+  <link rel="canonical" href="https://noelle.nevatal.id/docs/storage/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Storage — Noelle docs">
+  <meta property="og:description" content="See where disk space goes, clean up unused models and partial downloads, and move the model cache.">
+  <meta property="og:url" content="https://noelle.nevatal.id/docs/storage/">
+  <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="../../assets/favicon.png">
+  <link rel="stylesheet" href="../../styles.css">
+  <script>(function () { var t = null; try { t = localStorage.getItem("noelle-theme"); } catch (e) {}
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); })();</script>
+  <script src="../../config.js"></script>
+  <script src="../../main.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.9 17a8 8 0 1 1 14.2 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1.2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    </defs></svg>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="../../" aria-label="Noelle home">
+        <img src="../../assets/noelle.png" alt="" width="30" height="30"><span>Noelle</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="../../#features">Features</a>
+        <a href="../../docs/" aria-current="page">Docs</a>
+        <a href="../../docs/quickstart/">Quick start</a>
+        <a href="../../docs/api/">API</a>
+        <a href="../../#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="icon show-light"><use href="#i-moon"/></svg><svg class="icon show-dark"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-primary btn-small" href="../../#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg><span>Download</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="container docs" id="top">
+    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/" aria-current="page">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></aside>
+    <article class="prose">
+      <h1>Storage</h1>
+      <p class="page-lead">See where disk space goes, clean up unused models and partial downloads, and move the model cache.</p>
+<p>Models are large. The <strong>Storage</strong> page shows where the space goes and helps you get it back.</p>
+<h2 id="the-storage-advisor">The Storage Advisor<a class="heading-anchor" href="#the-storage-advisor" aria-label="Link to this section">#</a></h2>
+<p>At the top of the page, the advisor sums up the Hugging Face cache:</p>
+<ul>
+<li><strong>Active models</strong> — used in the last 90 days.</li>
+<li><strong>Not used for 90+ days</strong> — candidates for deletion, largest first, each with a <strong>Delete</strong> button.</li>
+<li><strong>Partial downloads</strong> and <strong>old revisions</strong> — safe to prune.</li>
+<li><strong>Local builds</strong> — 4-bit copies made in the Optimize tab.</li>
+</ul>
+<p><strong>Potential cleanup</strong> is the space you would free by removing all of these.</p>
+<h2 id="clean-up-tools">Clean-up tools<a class="heading-anchor" href="#clean-up-tools" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Prune partial downloads</strong> removes unfinished download files.</li>
+<li><strong>Prune old revisions</strong> removes model versions no branch or tag points to any more.</li>
+<li>Right-click a repository to delete it or one of its revisions.</li>
+<li><strong>Relocate cache…</strong> moves the whole cache to another drive.</li>
+<li><strong>Add cached models</strong> registers complete models that are already in the Hugging Face cache (for example
+downloaded by other tools).</li>
+</ul>
+<h2 id="where-noelle-keeps-things">Where Noelle keeps things<a class="heading-anchor" href="#where-noelle-keeps-things" aria-label="Link to this section">#</a></h2>
+<table class="table">
+<thead>
+<tr>
+<th>Location</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>~/.noelle/</code> (or <code>NOELLE_HOME</code>)</td>
+<td>Settings, the model registry and experiments, local builds (<code>models/</code>), runtime environments, knowledge bases (<code>vector_store/</code>), exports and logs</td>
+</tr>
+<tr>
+<td><code>~/.cache/huggingface/hub</code> (or <code>HF_HOME</code>)</td>
+<td>Downloaded models, shared with other Hugging Face tools</td>
+</tr>
+<tr>
+<td>System keychain</td>
+<td>Your Hugging Face token</td>
+</tr>
+</tbody>
+</table>
+<h2 id="runtime-environments">Runtime environments<a class="heading-anchor" href="#runtime-environments" aria-label="Link to this section">#</a></h2>
+<p>Advanced users can run the model runtime in a separate Python environment (<strong>Settings › Environments</strong>), for
+example to try a newer PyTorch. <code>noelle env export NAME -o noelle-env.yaml</code> writes a lockfile with every package
+pinned, and <code>noelle env import noelle-env.yaml</code> rebuilds the same environment on another machine.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/knowledge/"><span>Previous</span><b>Knowledge</b></a><a class="next" href="../../docs/api/"><span>Next</span><b>Local API</b></a></nav>
+    </article>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="../../"><img src="../../assets/noelle.png" alt="" width="24" height="24"><span>Noelle</span></a>
+          <p>Your local AI model lab — find, run, evaluate and serve open models on your own computer.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="../../#features">Features</a></li><li><a href="../../#how">How it works</a></li><li><a href="../../#privacy">Privacy</a></li><li><a href="../../#developers">Developers</a></li><li><a href="../../#download">Download</a></li><li><a href="../../#faq">FAQ</a></li></ul></div>
+        <div><h4>Documentation</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> Noelle · MIT License</span>
+        <span><a href="../../#download" data-link="source">Source code</a> ·
+          <a href="../../sitemap.xml">sitemap.xml</a></span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

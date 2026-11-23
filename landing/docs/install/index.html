@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Noelle — Noelle docs</title>
+  <meta name="description" content="Install Noelle on macOS, Windows or Linux, run the setup assistant and add a Hugging Face token.">
+  <link rel="canonical" href="https://noelle.nevatal.id/docs/install/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Install Noelle — Noelle docs">
+  <meta property="og:description" content="Install Noelle on macOS, Windows or Linux, run the setup assistant and add a Hugging Face token.">
+  <meta property="og:url" content="https://noelle.nevatal.id/docs/install/">
+  <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="../../assets/favicon.png">
+  <link rel="stylesheet" href="../../styles.css">
+  <script>(function () { var t = null; try { t = localStorage.getItem("noelle-theme"); } catch (e) {}
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); })();</script>
+  <script src="../../config.js"></script>
+  <script src="../../main.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.9 17a8 8 0 1 1 14.2 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1.2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    </defs></svg>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="../../" aria-label="Noelle home">
+        <img src="../../assets/noelle.png" alt="" width="30" height="30"><span>Noelle</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="../../#features">Features</a>
+        <a href="../../docs/" aria-current="page">Docs</a>
+        <a href="../../docs/quickstart/">Quick start</a>
+        <a href="../../docs/api/">API</a>
+        <a href="../../#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="icon show-light"><use href="#i-moon"/></svg><svg class="icon show-dark"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-primary btn-small" href="../../#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg><span>Download</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="container docs" id="top">
+    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/" aria-current="page">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></aside>
+    <article class="prose">
+      <h1>Install Noelle</h1>
+      <p class="page-lead">Install Noelle on macOS, Windows or Linux, run the setup assistant and add a Hugging Face token.</p>
+<p>Noelle ships as a regular installer for each platform. Get the latest version from the
+<a href="../../#download" data-link="download">download page</a> — it picks the right file for your system — or browse
+<a href="../../#download" data-link="files">all installers and older versions</a>.</p>
+<h2 id="system-requirements">System requirements<a class="heading-anchor" href="#system-requirements" aria-label="Link to this section">#</a></h2>
+<table class="table">
+<thead>
+<tr>
+<th></th>
+<th>Minimum</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>macOS</strong></td>
+<td>macOS 13 on Apple Silicon (M1 or newer)</td>
+<td>16 GB unified memory</td>
+</tr>
+<tr>
+<td><strong>Windows</strong></td>
+<td>Windows 10 or 11, 64-bit</td>
+<td>NVIDIA GPU with 8 GB+ VRAM</td>
+</tr>
+<tr>
+<td><strong>Linux</strong></td>
+<td>Ubuntu 22.04 / Debian 12, 64-bit</td>
+<td>NVIDIA GPU with 8 GB+ VRAM</td>
+</tr>
+<tr>
+<td><strong>Memory</strong></td>
+<td>8 GB (small models)</td>
+<td>16 GB runs 7-billion-parameter models in 4-bit</td>
+</tr>
+<tr>
+<td><strong>Disk</strong></td>
+<td>10 GB free</td>
+<td>50 GB+ if you keep several models</td>
+</tr>
+</tbody>
+</table>
+<p>A GPU is optional. Without one, Noelle runs smaller models on the CPU and tells you up front which models would be
+slow.</p>
+<h2 id="macos">macOS<a class="heading-anchor" href="#macos" aria-label="Link to this section">#</a></h2>
+<ol>
+<li>Open <code>Noelle-1.0.0-macos-arm64.pkg</code> and follow the steps. Choose <strong>Install for me only</strong> if you don't have an
+administrator password.</li>
+<li>Or open the <code>.dmg</code> and drag <strong>Noelle</strong> into <strong>Applications</strong>.</li>
+<li>The first time you open Noelle, macOS may say it can't verify the developer. Open <strong>System Settings ›
+Privacy &amp; Security</strong>, scroll down and click <strong>Open Anyway</strong>.</li>
+</ol>
+<h2 id="windows">Windows<a class="heading-anchor" href="#windows" aria-label="Link to this section">#</a></h2>
+<ol>
+<li>Run <code>Noelle-1.0.0-windows-x64-setup.exe</code>.</li>
+<li>If SmartScreen shows &quot;Windows protected your PC&quot;, click <strong>More info › Run anyway</strong>.</li>
+<li>The wizard lets you paste a Hugging Face token (optional) and creates a Start-menu shortcut.</li>
+</ol>
+<h2 id="linux">Linux<a class="heading-anchor" href="#linux" aria-label="Link to this section">#</a></h2>
+<pre><code class="language-bash">sudo apt install ./noelle_1.0.0_amd64.deb
+</code></pre>
+<p>Then open <strong>Noelle AI Studio</strong> from your app menu. The <code>.tar.gz</code> archive is a portable alternative: unpack it and
+run <code>Noelle/Noelle</code>.</p>
+<h2 id="the-setup-assistant">The setup assistant<a class="heading-anchor" href="#the-setup-assistant" aria-label="Link to this section">#</a></h2>
+<p>On first launch the setup assistant walks you through three steps. You can run it again any time from
+<strong>Settings › About</strong> or with <code>noelle setup</code>.</p>
+<ol>
+<li><strong>Hugging Face token</strong> (optional) — needed only for gated models such as some Llama releases. It is stored in
+your system keychain (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux), never in a file.</li>
+<li><strong>Hardware check</strong> — what your GPU and memory can run.</li>
+<li><strong>Optional downloads</strong> — the llama.cpp tools for GGUF models and a small starter chat model. Nothing is
+downloaded unless you tick it.</li>
+</ol>
+<h2 id="uninstall">Uninstall<a class="heading-anchor" href="#uninstall" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>macOS:</strong> delete <strong>Noelle</strong> from Applications (or <code>~/Applications</code>).</li>
+<li><strong>Windows:</strong> <strong>Settings › Apps › Installed apps › Noelle › Uninstall</strong>.</li>
+<li><strong>Linux:</strong> <code>sudo apt remove noelle</code>.</li>
+</ul>
+<p>Your settings, experiments and knowledge bases are in <code>~/.noelle</code>, and downloaded models are in the shared Hugging
+Face cache (<code>~/.cache/huggingface</code>). Delete those folders too if you want to remove everything — see
+<a href="../../docs/storage/">Storage</a>.</p>
+<h2 id="run-from-source">Run from source<a class="heading-anchor" href="#run-from-source" aria-label="Link to this section">#</a></h2>
+<pre><code class="language-bash">git clone https://github.com/thirza258/NoelleApp
+cd NoelleApp
+python3 -m venv .venv
+.venv/bin/pip install -e &quot;.[all]&quot;
+.venv/bin/python -m noelle
+</code></pre>
+<p>Python 3.11 or newer is required. On NVIDIA systems, install the CUDA build of PyTorch first.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/"><span>Previous</span><b>Overview</b></a><a class="next" href="../../docs/quickstart/"><span>Next</span><b>Quick start</b></a></nav>
+    </article>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="../../"><img src="../../assets/noelle.png" alt="" width="24" height="24"><span>Noelle</span></a>
+          <p>Your local AI model lab — find, run, evaluate and serve open models on your own computer.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="../../#features">Features</a></li><li><a href="../../#how">How it works</a></li><li><a href="../../#privacy">Privacy</a></li><li><a href="../../#developers">Developers</a></li><li><a href="../../#download">Download</a></li><li><a href="../../#faq">FAQ</a></li></ul></div>
+        <div><h4>Documentation</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> Noelle · MIT License</span>
+        <span><a href="../../#download" data-link="source">Source code</a> ·
+          <a href="../../sitemap.xml">sitemap.xml</a></span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
