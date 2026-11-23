@@ -13,8 +13,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-latest, windows-2022]
         python: ["3.12", "3.13"]
+        exclude:
+          - os: macos-latest  # macOS minutes bill at 10x on private repos; one Python version is enough
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen

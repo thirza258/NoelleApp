@@ -374,7 +374,7 @@ class Worker:
                 recovered=True)
             log.warning("%s: out of memory (%s)", job.cmd, exc)
         elif isinstance(exc, NoelleRuntimeError):
-            payload = error_payload(exc.code, exc.message, exc.hint)
+            payload = error_payload(exc.code, exc.message, exc.hint, **getattr(exc, "extra", {}))
         else:
             log.error("%s failed:\n%s", job.cmd, "".join(traceback.format_exception(exc)))
             payload = error_payload(ErrorCode.INTERNAL, f"{type(exc).__name__}: {exc}",

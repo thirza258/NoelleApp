@@ -160,7 +160,7 @@ def _make_fake_llama(folder: Path, *, quantize_exit: int = 0) -> Path:
         "print('', flush=True)\n"
         "open(a.outfile, 'wb').write(b'GGUF' + b'\\0' * 4000)\n"
         "print('INFO:hf-to-gguf:Model successfully exported to ' + a.outfile, flush=True)\n")
-    binary = folder / "build" / "bin" / "llama-quantize"
+    binary = folder / "build" / "bin" / qe._QUANTIZE_NAMES[0]
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text(
         f"#!{sys.executable}\n"
@@ -197,7 +197,7 @@ def test_gguf_tools_found_via_settings(monkeypatch: pytest.MonkeyPatch, tmp_path
     get_settings().set("quantization.llama_cpp_dir", str(llama))
     tools = qe.find_llama_cpp()
     assert tools.convert_script == llama / "convert_hf_to_gguf.py"
-    assert tools.quantize_binary == llama / "build" / "bin" / "llama-quantize"
+    assert tools.quantize_binary == llama / "build" / "bin" / qe._QUANTIZE_NAMES[0]
     assert tools.gguf_package is True
     assert qe.capabilities("mps")["gguf-q4_k_m"]["available"] is True
 
@@ -211,6 +211,7 @@ def test_gguf_requires_gguf_python_package(monkeypatch: pytest.MonkeyPatch, tmp_
     assert reason is not None and "'gguf' Python package" in reason
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the fake llama.cpp tools are POSIX shebang scripts")
 def test_gguf_pipeline_with_fake_llama_cpp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, source: Path) -> None:
     from noelle.config import get_settings
 
@@ -240,6 +241,7 @@ def test_gguf_pipeline_with_fake_llama_cpp(monkeypatch: pytest.MonkeyPatch, tmp_
     assert events[-1]["stage"] == "finalize" and events[-1]["current"] == 4
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the fake llama.cpp tools are POSIX shebang scripts")
 def test_gguf_tool_failure_cleans_up(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, source: Path) -> None:
     from noelle.config import get_settings
 

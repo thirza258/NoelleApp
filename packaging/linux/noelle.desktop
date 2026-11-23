@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Noelle AI Studio
+GenericName=Local AI model studio
+Comment=Discover, run, compare and serve open-weight models locally
+Exec=/opt/noelle/Noelle %U
+Icon=noelle
+Terminal=false
+Categories=Development;Science;ArtificialIntelligence;
+StartupWMClass=Noelle
+Keywords=AI;LLM;Hugging Face;models;chat;

@@ -55,6 +55,10 @@
   "quantization": {
     "llama_cpp_dir": null
   },
+  "setup": {
+    "completed": false,
+    "version": null
+  },
   "ui": {
     "hero_collapse_threshold": 120,
     "hero_width": 380,

@@ -8,10 +8,11 @@ from noelle.runtime.protocol import ErrorCode
 class NoelleRuntimeError(Exception):
     code: ErrorCode = ErrorCode.INTERNAL
 
-    def __init__(self, message: str, hint: str | None = None) -> None:
+    def __init__(self, message: str, hint: str | None = None, **extra: object) -> None:
         super().__init__(message)
         self.message = message
         self.hint = hint
+        self.extra = extra  # structured details for the UI, e.g. component="llama.cpp"
 
 
 class ModelNotFound(NoelleRuntimeError):

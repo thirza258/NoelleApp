@@ -14,6 +14,7 @@ prompt/completion token counts and peak accelerator memory.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -536,6 +537,170 @@ class LlamaCppTextEngine:
             except Exception:
                 pass
         self.llm = None
+
+
+# ---------------------------------------------------------------------------
+# llama-server (GGUF via the downloaded llama.cpp component; works in frozen builds)
+# ---------------------------------------------------------------------------
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+class LlamaServerEngine:
+    """Runs a GGUF file in the official ``llama-server`` child process (loopback only) and streams
+    from its OpenAI-compatible endpoint. Metal/CUDA offload is handled by llama.cpp itself."""
+
+    engine = "llama_server"
+
+    def __init__(self, process: Any, port: int, n_ctx: int, device: str) -> None:
+        self.process = process
+        self.port = port
+        self.context_window = n_ctx
+        self.device = device
+        self.kv_per_token = None
+        self.config: dict[str, Any] = {"n_ctx": n_ctx}
+
+    @classmethod
+    def load(cls, gguf_path: str, *, device: str, binary: str, n_ctx: int = 4096,
+             startup_timeout: float = 180.0) -> LlamaServerEngine:
+        import subprocess
+
+        from noelle import paths
+
+        if not Path(gguf_path).is_file():
+            raise LoadFailed(f"GGUF file not found: {gguf_path}")
+        port = _free_port()
+        args = [binary, "-m", gguf_path, "--host", "127.0.0.1", "--port", str(port), "-c", str(n_ctx),
+                "-ngl", "999" if device != "cpu" else "0"]
+        log_path = paths.logs_dir() / "llama-server.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = open(log_path, "ab")  # noqa: SIM115 - owned by the child process
+        env = {k: v for k, v in os.environ.items() if k not in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")}
+        process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+        log.close()
+        engine = cls(process, port, n_ctx, device)
+        deadline = time.monotonic() + startup_timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                tail = log_path.read_bytes()[-600:].decode("utf-8", "replace").strip().splitlines()
+                raise LoadFailed(f"llama-server exited (code {process.returncode}): {tail[-1] if tail else 'no output'}")
+            try:
+                status, _ = engine._call("GET", "/health", timeout=2)
+                if status == 200:
+                    return engine
+            except OSError:
+                pass
+            time.sleep(0.25)
+        engine.release()
+        raise LoadFailed("llama-server did not become ready in time.")
+
+    def _call(self, method: str, path: str, body: dict[str, Any] | None = None,
+              timeout: float = 30) -> tuple[int, Any]:
+        import http.client
+        import json
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+        try:
+            conn.request(method, path, body=json.dumps(body) if body is not None else None,
+                         headers={"Content-Type": "application/json"})
+            response = conn.getresponse()
+            raw = response.read()
+            try:
+                return response.status, json.loads(raw) if raw else None
+            except ValueError:
+                return response.status, raw.decode("utf-8", "replace")
+        finally:
+            conn.close()
+
+    def count_tokens(self, text: str) -> int:
+        status, data = self._call("POST", "/tokenize", {"content": text})
+        if status == 200 and isinstance(data, dict):
+            return len(data.get("tokens") or [])
+        return max(1, len(text) // 4)
+
+    def stream_chat(self, messages: list[dict[str, Any]], params: GenerationParams, *, stop_event: threading.Event,
+                    on_text: OnText, system_prompt: str | None = None) -> GenerationResult:
+        import http.client
+        import json
+
+        msgs = messages_with_system(messages, system_prompt)
+        prompt_tokens = self.count_tokens(render_plain_prompt(msgs))
+        tuned = tune_generation(params.max_new_tokens, prompt_tokens, context_window=self.context_window,
+                                kv_bytes_per_token=None, free_bytes=None)
+        body: dict[str, Any] = {"messages": msgs, "stream": True, "max_tokens": tuned.max_new_tokens,
+                                "temperature": params.temperature, "top_p": params.top_p, "top_k": params.top_k,
+                                "repeat_penalty": params.repetition_penalty,
+                                "stream_options": {"include_usage": True}}
+        if params.seed is not None:
+            body["seed"] = params.seed
+        if params.stop:
+            body["stop"] = params.stop
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=600)
+        t0 = time.perf_counter()
+        first: float | None = None
+        parts: list[str] = []
+        completion = 0
+        finish = "stop"
+        usage: dict[str, Any] = {}
+        try:
+            conn.request("POST", "/v1/chat/completions", body=json.dumps(body),
+                         headers={"Content-Type": "application/json", "Accept": "text/event-stream"})
+            response = conn.getresponse()
+            if response.status != 200:
+                raise LoadFailed(f"llama-server returned HTTP {response.status}: "
+                                 f"{response.read()[:300].decode('utf-8', 'replace')}")
+            for raw in response:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                usage = chunk.get("usage") or usage
+                for choice in chunk.get("choices") or []:
+                    delta = (choice.get("delta") or {}).get("content")
+                    if delta:
+                        if first is None:
+                            first = time.perf_counter()
+                        completion += 1
+                        parts.append(delta)
+                        on_text(delta)
+                    if choice.get("finish_reason"):
+                        finish = "length" if choice["finish_reason"] == "length" else "stop"
+                if stop_event.is_set():
+                    finish = "cancelled"  # closing the connection makes llama-server stop generating
+                    break
+        finally:
+            conn.close()
+        end = time.perf_counter()
+        completion = int(usage.get("completion_tokens") or completion)
+        ttft, rate = _rates(t0, first, end, completion)
+        return GenerationResult(text="".join(parts), prompt_tokens=int(usage.get("prompt_tokens") or prompt_tokens),
+                                completion_tokens=completion, ttft_ms=ttft, tokens_per_second=rate,
+                                total_ms=(end - t0) * 1000.0, peak_memory_bytes=None, finish_reason=finish,
+                                tuning={"max_new_tokens": tuned.max_new_tokens, "clamped": tuned.clamped,
+                                        "reason": tuned.reason})
+
+    def complete(self, prompt: str, *, max_new_tokens: int = 96, system_prompt: str | None = None) -> str:
+        params = GenerationParams(temperature=0.0, max_new_tokens=max_new_tokens)
+        return self.stream_chat([{"role": "user", "content": prompt}], params, stop_event=threading.Event(),
+                                on_text=lambda _t: None, system_prompt=system_prompt).text
+
+    def release(self) -> None:
+        process, self.process = self.process, None
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except Exception:
+                process.kill()
 
 
 # ---------------------------------------------------------------------------

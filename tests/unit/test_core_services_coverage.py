@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -253,7 +254,8 @@ def test_stdout_parsing_and_finish(manager: DownloadManager, tmp_path: Path) -> 
     assert "a.bin: boom" in job.log[-1]
     finished: list[tuple[str, bool]] = []
     manager.job_finished.connect(lambda repo, ok: finished.append((repo, ok)))
-    proc._output = b'{"type":"done","path":"' + str(tmp_path).encode() + b'","total_bytes":10,"files":["a.bin"]}\n'
+    proc._output = json.dumps({"type": "done", "path": str(tmp_path), "total_bytes": 10,
+                               "files": ["a.bin"]}).encode() + b"\n"
     manager._on_finished("org/m", 0)
     assert job.status == "done" and finished == [("org/m", True)]
     assert manager.registry.get_model("org/m") is not None

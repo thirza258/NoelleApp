@@ -148,11 +148,23 @@ class OptimizePanel(QScrollArea):
             if not available and reason:
                 text.addWidget(label(reason, "faint", wrap=True))
             row.addLayout(text, 1)
-            go = button("Quantize", "layers", "primary" if available else None)
-            go.setEnabled(available and downloaded and self._quant is None)
-            go.clicked.connect(lambda _=False, k=key: self._quantize(k))
+            needs_tools = key == "gguf-q4_k_m" and not available and is_text and "llama.cpp tools" in (reason or "")
+            if needs_tools:
+                go = button("Download tools…", "download", "primary")
+                go.setToolTip("Asks before downloading anything")
+                go.clicked.connect(self._get_llama_cpp)
+            else:
+                go = button("Quantize", "layers", "primary" if available else None)
+                go.setEnabled(available and downloaded and self._quant is None)
+                go.clicked.connect(lambda _=False, k=key: self._quantize(k))
             row.addWidget(go, 0, Qt.AlignmentFlag.AlignVCenter)
             self.methods.addWidget(card)
+
+    def _get_llama_cpp(self) -> None:
+        from noelle.app.ui.component_dialog import ensure_llama_cpp
+
+        ensure_llama_cpp(self, self.on_activated,
+                         reason="GGUF quantization uses llama.cpp's converter and llama-quantize.")
 
     # ---------------------------------------------------------- quantization
     def _quantize(self, method: str) -> None:

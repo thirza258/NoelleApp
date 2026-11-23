@@ -109,7 +109,7 @@ class ServerManager(QObject):
     def _on_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
         if self._state != "stopped":
             tail = list(self.log)[-5:]
-            if any("address already in use" in l.lower() or "errno 48" in l.lower() for l in tail):
+            if any("address already in use" in l.lower() or "errno 48" in l.lower() or "10048" in l for l in tail):
                 self.last_error = f"Port {self.port} is already in use. Choose another port."
             else:
                 self.last_error = f"The API server exited (code {exit_code})."

@@ -301,6 +301,11 @@ class TextPlayground(QWidget):
             view.set_error(message, hint)
             if self.history and self.history[-1]["role"] == "user":
                 self.history.pop()
+            if payload.get("component") == "llama.cpp":
+                from noelle.app.ui.component_dialog import ensure_llama_cpp
+
+                ensure_llama_cpp(self, lambda: self.ctx.toast("llama.cpp tools installed — send your message again.",
+                                                              "success"), reason=message)
         self._done()
 
     def _done(self) -> None:

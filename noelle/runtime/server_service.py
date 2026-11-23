@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import base64
 import email.parser
+import errno
 import email.policy
 import hmac
 import ipaddress
@@ -882,5 +883,7 @@ def _bind_problem(host: str, port: int) -> str | None:
         try:
             probe.bind((host, port))
         except OSError as exc:
+            if exc.errno == errno.EADDRINUSE or getattr(exc, "winerror", None) == 10048:  # WSAEADDRINUSE
+                return "address already in use"
             return exc.strerror or str(exc)
     return None

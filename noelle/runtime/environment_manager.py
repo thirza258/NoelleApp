@@ -72,7 +72,7 @@ PROFILES: dict[str, Profile] = {
                 ("sentence-transformers>=3.0", "pypdf>=4.0", "python-docx>=1.1", "sqlite-vec>=0.1.6"),
                 ("sentence_transformers", "pypdf", "docx", "sqlite_vec")),
         Profile("server", "OpenAI-compatible local REST server.",
-                ("fastapi>=0.110", "uvicorn[standard]>=0.30"), ("fastapi", "uvicorn")),
+                ("fastapi>=0.110", "uvicorn[standard]>=0.30", "tornado>=6.1"), ("fastapi", "uvicorn")),
         Profile("peft", "LoRA adapters.", ("peft>=0.12",), ("peft",)),
         Profile("mlx", "Apple Silicon 4-bit inference and quantization (MLX).",
                 ("mlx>=0.20", "mlx-lm>=0.20"), ("mlx", "mlx_lm"), requires="apple_silicon"),

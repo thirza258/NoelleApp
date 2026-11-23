@@ -19,6 +19,7 @@ from typing import Any, Callable, Iterator
 from noelle.runtime import devices, tasks
 from noelle.runtime.errors import (
     BadRequest,
+    DependencyMissing,
     LoadFailed,
     ModelNotFound,
     NoelleRuntimeError,
@@ -27,6 +28,7 @@ from noelle.runtime.errors import (
 )
 from noelle.runtime.generation import (
     LlamaCppTextEngine,
+    LlamaServerEngine,
     MlxTextEngine,
     TransformersTextEngine,
     VisionLanguageEngine,
@@ -356,17 +358,13 @@ class ModelManager:
                 if spec.precision == "mlx-4bit" or is_mlx_checkpoint(source):
                     engine = "mlx"
                 elif spec.gguf_file:
-                    import importlib.util
-
-                    engine = "llama_cpp" if importlib.util.find_spec("llama_cpp") else "transformers"
+                    engine = "gguf"
                 else:
                     engine = "transformers"
             if engine == "mlx":
                 return MlxTextEngine.load(source, trust_remote_code=trc), "mlx"
-            if engine == "llama_cpp":
-                if not spec.gguf_file:
-                    raise BadRequest("llama.cpp needs a gguf_file")
-                return LlamaCppTextEngine.load(str(Path(source) / spec.gguf_file), device=device), "llama_cpp"
+            if engine in ("gguf", "llama_cpp", "llama_server"):
+                return self._load_gguf(spec, source, device)
             return (TransformersTextEngine.load(source, device=device, precision=spec.precision, trust_remote_code=trc,
                                                 revision=None, gguf_file=spec.gguf_file), "transformers")
         if family == tasks.VISION:
@@ -387,6 +385,26 @@ class ModelManager:
         if family == tasks.EMBEDDING:
             return EmbeddingEngine.load(source, device=device, trust_remote_code=trc), "sentence-transformers"
         raise BadRequest(f"No engine for task family '{family}' (rev={rev})")
+
+
+    @staticmethod
+    def _load_gguf(spec: ModelSpec, source: str, device: str) -> tuple[Any, str]:
+        """llama-cpp-python when installed, else the llama-server binary from the llama.cpp component."""
+        import importlib.util
+
+        if not spec.gguf_file:
+            raise BadRequest("GGUF models need a gguf_file.")
+        gguf_path = str(Path(source) / spec.gguf_file)
+        if importlib.util.find_spec("llama_cpp") is not None:
+            return LlamaCppTextEngine.load(gguf_path, device=device), "llama_cpp"
+        from noelle.runtime.llama_tools import COMPONENT, find_llama_server
+
+        server = find_llama_server()
+        if server is None:
+            raise DependencyMissing("Running GGUF models needs the llama.cpp tools, which are not installed.",
+                                    hint="Noelle can download them for you after you approve it.",
+                                    component=COMPONENT)
+        return LlamaServerEngine.load(gguf_path, device=device, binary=str(server)), "llama_server"
 
 
 def _read_config(root: Path) -> dict[str, Any]:

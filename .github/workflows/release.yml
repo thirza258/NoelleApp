@@ -1,9 +1,18 @@
 name: release
 
+# Builds the desktop app and its installer on each OS.
+#   - Manual run (Actions tab or `gh workflow run release.yml`): choose the targets; installers are
+#     uploaded as workflow artifacts.
+#   - Tag push (v*): builds every target and attaches the installers to a GitHub release.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      targets:
+        description: 'JSON list of runners, e.g. ["windows-2022","ubuntu-24.04","macos-latest"]'
+        required: false
+        default: '["windows-2022","ubuntu-24.04"]'
 
 permissions:
   contents: write
@@ -13,23 +22,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-14        # Apple Silicon (Metal + MLX)
-          - os: ubuntu-24.04    # CUDA wheels resolve against the user's driver at runtime
-          - os: windows-2022
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.targets || '["macos-latest","ubuntu-24.04","windows-2022"]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     env:
       # secrets cannot appear in `if:` expressions; expose only whether one is configured
       HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12 != '' }}
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[all,dev]"
+      - name: System libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 libxcb-cursor0
+      - name: Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+      - name: CPU PyTorch (Linux/Windows keeps installers a sensible size)
+        if: runner.os != 'macOS'
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install Noelle
+        run: python -m pip install -e ".[all,dev]"
       - name: Import macOS signing certificate
         if: runner.os == 'macOS' && env.HAS_MAC_CERT == 'true'
         env:
@@ -40,17 +55,18 @@ jobs:
           security create-keychain -p ci build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p ci build.keychain
-          security import cert.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security import cert.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
           rm cert.p12
-      - name: Build (and sign when secrets are configured)
+      - name: Build app and installer
         env:
           NOELLE_MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+          NOELLE_MAC_INSTALLER_IDENTITY: ${{ secrets.MAC_INSTALLER_IDENTITY }}
           NOELLE_NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE }}
           NOELLE_WIN_CERT_PATH: ${{ secrets.WIN_CERT_PATH }}
           NOELLE_WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
         run: python packaging/build.py --clean --sign
-      - name: Smoke-test the frozen binary
+      - name: Smoke-test the built app
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then BIN=dist/Noelle.app/Contents/MacOS/Noelle; \
@@ -59,9 +75,20 @@ jobs:
           "$BIN" env list
       - uses: actions/upload-artifact@v4
         with:
-          name: noelle-${{ matrix.os }}
-          path: dist/Noelle-1.0.0-*
+          name: noelle-installer-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            dist/*.pkg
+            dist/*.dmg
+            dist/*-setup.exe
+            dist/*.deb
+            dist/*.tar.gz
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/Noelle-1.0.0-*
+          files: |
+            dist/*.pkg
+            dist/*.dmg
+            dist/*-setup.exe
+            dist/*.deb
+            dist/*.tar.gz

@@ -159,14 +159,15 @@ class LlamaCppTools:
     python: str | None
     gguf_package: bool
     searched: list[str] = field(default_factory=list)
+    python_args: list[str] = field(default_factory=list)  # e.g. ["pyrun"] for the frozen app binary
 
     def missing_reason(self) -> str | None:
         missing = [name for name, found in (("convert_hf_to_gguf.py", self.convert_script),
                                             ("llama-quantize", self.quantize_binary)) if found is None]
         if missing:
             where = ", ".join(self.searched)
-            return (f"llama.cpp tools not found: {' and '.join(missing)}. Install llama.cpp (for example "
-                    f"`brew install llama.cpp`) or set quantization.llama_cpp_dir to a llama.cpp folder. "
+            return (f"llama.cpp tools not found: {' and '.join(missing)}. Noelle can download them for you "
+                    f"(Settings › Components), or set quantization.llama_cpp_dir to a llama.cpp folder. "
                     f"Searched quantization.llama_cpp_dir, PATH and {where}.")
         if self.python is None:
             return "No Python interpreter is available to run convert_hf_to_gguf.py."
@@ -222,14 +223,23 @@ def find_llama_cpp(llama_cpp_dir: str | os.PathLike[str] | None = None) -> Llama
     if configured:
         root = Path(configured).expanduser()
         preferred = [root, root / "bin", root / "build" / "bin", root / "build" / "bin" / "Release"]
+    if llama_cpp_dir is None:  # the in-app download, read from disk so a running worker sees it immediately
+        from noelle.runtime.llama_tools import installed_info
+
+        info = installed_info()
+        if info is not None:
+            preferred = [Path(info["path"]), Path(info["path"]) / "bin", *preferred]
     common = _common_llama_dirs()
     script = (_find_in(preferred, _SCRIPT_NAMES, executable=False) or _which(_SCRIPT_NAMES)
               or _find_in(common, _SCRIPT_NAMES, executable=False))
     binary = (_find_in(preferred, _QUANTIZE_NAMES, executable=True) or _which(_QUANTIZE_NAMES)
               or _find_in(common, _QUANTIZE_NAMES, executable=True))
-    python = sys.executable if not getattr(sys, "frozen", False) else shutil.which("python3")
+    # A frozen app has no separate python; its own binary runs scripts via the hidden `pyrun` subcommand,
+    # which also gives the converter the bundled torch/numpy/transformers.
+    python = sys.executable
+    python_args = ["pyrun"] if getattr(sys, "frozen", False) else []
     gguf_ok = script is not None and ((script.parent / "gguf-py").is_dir() or _has_module("gguf"))
-    return LlamaCppTools(script, binary, python, gguf_ok, [str(p) for p in preferred + common])
+    return LlamaCppTools(script, binary, python, gguf_ok, [str(p) for p in preferred + common], python_args)
 
 
 def unavailable_reason(method: str, device: str) -> str | None:
@@ -437,7 +447,8 @@ def _quantize_gguf(source: Path, staging: Path, *, name: str, device: str, repor
     f16 = staging / f"{name}-f16.gguf"
     final = staging / f"{name}-{GGUF_QUANT_TYPE}.gguf"
     report.step("convert", f"Converting to an FP16 GGUF with {tools.convert_script.name}…")
-    _run_tool([tools.python, str(tools.convert_script), str(source), "--outfile", str(f16), "--outtype", "f16"],
+    _run_tool([tools.python, *tools.python_args, str(tools.convert_script), str(source), "--outfile", str(f16),
+               "--outtype", "f16"],
               stage="convert", tool=tools.convert_script.name, report=report, stop_event=stop_event)
     if not f16.is_file():
         raise QuantizationFailed(f"{tools.convert_script.name} did not write {f16.name}.")

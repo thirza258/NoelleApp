@@ -203,7 +203,8 @@ def test_search_errors_carry_hints(site: Site) -> None:
     assert unconfigured.value.hint
     with pytest.raises(BadRequest) as down:
         WebSearchEngine(f"http://127.0.0.1:{free_port()}", timeout=2).search("solar")
-    assert "reach" in down.value.message and down.value.hint
+    # refused on POSIX ("could not reach"), often a timeout on Windows ("did not answer")
+    assert ("reach" in down.value.message or "did not answer" in down.value.message) and down.value.hint
 
 
 # ============================================================================

@@ -624,6 +624,10 @@ class ModelDetailPage(QWidget):
             self.force_btn.show()
         if payload.get("code") == "REMOTE_CODE_BLOCKED":
             self.allow_remote.show()
+        if payload.get("component") == "llama.cpp":
+            from noelle.app.ui.component_dialog import ensure_llama_cpp
+
+            ensure_llama_cpp(self, lambda: self._load(force=False), reason=payload.get("message"))
 
     def _on_trust_toggled(self, checked: bool) -> None:
         if self.summary is None:

@@ -1,0 +1,22 @@
+#!/bin/bash
+# Runs as root after Installer copies Noelle.app. Opens the Setup Assistant for the user who is
+# logged in at the console, so token entry and optional downloads continue straight after install.
+# Never fails the installation: launching is best effort.
+
+if [ "${COMMAND_LINE_INSTALL:-0}" = "1" ]; then
+  exit 0  # scripted/managed installs (installer -pkg) should not pop up a window
+fi
+
+CONSOLE_USER=$(/usr/bin/stat -f %Su /dev/console 2>/dev/null)
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ] || [ "$CONSOLE_USER" = "loginwindow" ]; then
+  exit 0
+fi
+CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null) || exit 0
+
+APP="$2/Noelle.app"
+if [ ! -d "$APP" ]; then
+  APP="/Applications/Noelle.app"
+fi
+
+/bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/open -a "$APP" --args --setup >/dev/null 2>&1 || true
+exit 0

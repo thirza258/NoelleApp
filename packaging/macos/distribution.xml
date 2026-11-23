@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- productbuild distribution for the step-by-step macOS installer (Introduction, License,
+     Destination, Installation Type, Install, Summary). build.py fills in __VERSION__ / __ARCH__. -->
+<installer-gui-script minSpecVersion="2">
+    <title>Noelle AI Studio</title>
+    <organization>ai.noelle</organization>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="false" hostArchitectures="__ARCH__" rootVolumeOnly="false"/>
+    <!-- "Install for me only" works without an administrator password (installs to ~/Applications). -->
+    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="13.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    <choices-outline>
+        <line choice="default">
+            <line choice="ai.noelle.studio"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="ai.noelle.studio" visible="false">
+        <pkg-ref id="ai.noelle.studio"/>
+    </choice>
+    <pkg-ref id="ai.noelle.studio" version="__VERSION__" onConclusion="none">Noelle-component.pkg</pkg-ref>
+</installer-gui-script>

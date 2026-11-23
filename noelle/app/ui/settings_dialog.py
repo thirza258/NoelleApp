@@ -55,6 +55,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._environments_tab(), "Environments")
         tabs.addTab(self._storage_tab(), "Storage")
         tabs.addTab(self._grounding_tab(), "Grounding")
+        tabs.addTab(self._components_tab(), "Components")
         tabs.addTab(self._about_tab(), "About")
         root.addWidget(tabs, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -224,11 +225,60 @@ class SettingsDialog(QDialog):
         layout.addStretch(1)
         return page
 
+    def _components_tab(self) -> QWidget:
+        page, layout = self._page()
+        layout.addWidget(label("llama.cpp tools", "h3"))
+        layout.addWidget(label("Needed to create GGUF builds (Optimize › GGUF) and to run GGUF models. Downloaded "
+                               "from the official llama.cpp releases only when you ask for it.", "muted", wrap=True))
+        self.component_status = label("", "faint", wrap=True)
+        layout.addWidget(self.component_status)
+        row = QHBoxLayout()
+        self.component_install = button("Download…", "download", "primary")
+        self.component_install.clicked.connect(self._install_component)
+        row.addWidget(self.component_install)
+        self.component_remove = button("Remove", "trash", "danger")
+        self.component_remove.clicked.connect(self._remove_component)
+        row.addWidget(self.component_remove)
+        row.addStretch(1)
+        layout.addLayout(row)
+        layout.addStretch(1)
+        self._refresh_component()
+        return page
+
+    def _refresh_component(self) -> None:
+        from noelle.app.services import components
+
+        info = components.installed_llama_cpp()
+        if info:
+            self.component_status.setText(f"Installed: llama.cpp {info.get('tag')} in {info.get('path')}")
+        else:
+            server = components.llama_server_binary()
+            self.component_status.setText(f"Not installed by Noelle{f' (found {server} on PATH)' if server else ''}.")
+        self.component_install.setText("Update…" if info else "Download…")
+        self.component_remove.setEnabled(info is not None)
+
+    def _install_component(self) -> None:
+        from noelle.app.ui.component_dialog import ComponentInstallDialog
+
+        ComponentInstallDialog(self).exec()
+        self._refresh_component()
+
+    def _remove_component(self) -> None:
+        from noelle.app.services import components
+
+        if QMessageBox.question(self, "Remove llama.cpp tools", "Delete the downloaded llama.cpp tools? GGUF builds "
+                                "you created are kept.") == QMessageBox.StandardButton.Yes:
+            components.remove_llama_cpp()
+            self._refresh_component()
+
     def _about_tab(self) -> QWidget:
         page, layout = self._page()
         layout.addWidget(label(f"Noelle Desktop AI Studio {__version__}", "h3"))
         layout.addWidget(label("Local-first workbench for open-weight models. Inference, document indexing and the "
                                "API server run on this machine.", "muted", wrap=True))
+        rerun = button("Run setup assistant…", "wand")
+        rerun.clicked.connect(self._run_assistant)
+        layout.addWidget(rerun)
         for caption, path in (("Data folder", paths.home()), ("Logs", paths.logs_dir()),
                               ("Exports", paths.exports_dir())):
             btn = button(f"Open {caption.lower()} — {path}", "folder", "link")
@@ -236,6 +286,11 @@ class SettingsDialog(QDialog):
             layout.addWidget(btn)
         layout.addStretch(1)
         return page
+
+    def _run_assistant(self) -> None:
+        from noelle.app.ui.setup_assistant import run_assistant
+
+        run_assistant(self.ctx, self)
 
     # --------------------------------------------------------------- token
     def _verify_token(self) -> None:

@@ -43,7 +43,7 @@ rag = [
     "python-docx>=1.1",
     "sqlite-vec>=0.1.6",
 ]
-server = ["fastapi>=0.110", "uvicorn[standard]>=0.30"]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.30", "tornado>=6.1"]  # tornado: pyzmq asyncio on Windows
 peft = ["peft>=0.12"]
 # Apple Silicon 4-bit path (MLX).
 mlx = [

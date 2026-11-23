@@ -72,7 +72,7 @@ def test_cuda_quant_profile_refused_on_macos(monkeypatch: pytest.MonkeyPatch) ->
 def test_requirements_are_deduplicated_and_start_with_base() -> None:
     reqs = em.requirements_for(["server", "base"])
     assert reqs[: len(em.PROFILES["base"].requirements)] == list(em.PROFILES["base"].requirements)
-    assert reqs[-2:] == ["fastapi>=0.110", "uvicorn[standard]>=0.30"]
+    assert reqs[-3:] == ["fastapi>=0.110", "uvicorn[standard]>=0.30", "tornado>=6.1"]
     assert len(reqs) == len(set(reqs))
 
 

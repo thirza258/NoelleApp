@@ -44,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--no-verify", action="store_true")
     download.add_argument("--dry-run", action="store_true")
 
+    setup = sub.add_parser("setup", help="open the setup assistant, or import a token (used by installers)")
+    setup.add_argument("--import-hf-token", metavar="FILE", default=None,
+                       help="read a Hugging Face token from FILE into the OS credential store, then delete FILE")
+
+    pyrun = sub.add_parser("pyrun", help=argparse.SUPPRESS)  # frozen builds: run a helper script (GGUF converter)
+    pyrun.add_argument("script")
+    pyrun.add_argument("script_args", nargs=argparse.REMAINDER)
+
     env = sub.add_parser("env", help="manage isolated runtime environments")
     env_sub = env.add_subparsers(dest="env_command")
     create = env_sub.add_parser("create")
@@ -60,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    commands = {"ui", "worker", "server", "download", "env", "-h", "--help"}
+    commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "-h", "--help"}
     if not argv or argv[0] not in commands:
         # Default to the UI; leave Qt's own arguments (e.g. -platform offscreen) for QApplication.
         from noelle.app.main import run
@@ -84,12 +92,54 @@ def main(argv: list[str] | None = None) -> int:
         from noelle.runtime import downloader
 
         return downloader.main(args)
+    if args.command == "setup":
+        if args.import_hf_token:
+            return import_hf_token(args.import_hf_token)
+        from noelle.app.main import run
+
+        return run(["--setup"])
+    if args.command == "pyrun":
+        import runpy
+        from pathlib import Path
+
+        sys.argv = [args.script, *args.script_args]
+        sys.path.insert(0, str(Path(args.script).resolve().parent))
+        runpy.run_path(args.script, run_name="__main__")
+        return 0
     if args.command == "env":
         from noelle.runtime import environment_manager
 
         return environment_manager.main(args)
     parser.print_help()
     return 1
+
+
+def import_hf_token(path: str) -> int:
+    """Store a token handed over by an installer, then delete the hand-over file."""
+    from pathlib import Path
+
+    from noelle.app.services import hf_client
+
+    file = Path(path)
+    try:
+        token = file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"Could not read {file}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        try:
+            file.unlink()
+        except OSError:
+            pass
+    if not token:
+        return 0
+    try:
+        hf_client.set_token(token)
+    except Exception as exc:  # no keyring backend
+        print(f"Could not store the token in the credential store: {exc}", file=sys.stderr)
+        return 1
+    print("Hugging Face token saved to the system credential store.")
+    return 0
 
 
 if __name__ == "__main__":

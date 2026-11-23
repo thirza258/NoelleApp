@@ -82,10 +82,13 @@ if IS_MAC:
         coll,
         name=f"{APP_NAME}.app",
         bundle_identifier="ai.noelle.studio",
+        icon=str(ROOT / "packaging" / "noelle.icns"),
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": "Noelle AI Studio",
             "CFBundleShortVersionString": "1.0.0",
+            "CFBundleVersion": "1.0.0",
+            "LSApplicationCategoryType": "public.app-category.developer-tools",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "13.0",
             "NSMicrophoneUsageDescription": "Noelle records audio locally for speech recognition. "

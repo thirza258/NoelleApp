@@ -62,7 +62,7 @@ def run(argv: list[str] | None = None) -> int:
     _configure_logging()
     _apply_environment()
 
-    from PySide6.QtCore import QCoreApplication, Qt
+    from PySide6.QtCore import QCoreApplication, Qt, QTimer
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication
 
@@ -90,6 +90,10 @@ def run(argv: list[str] | None = None) -> int:
     ctx.runtime.start()
     ctx.hardware.start()
     window.start()
+    from noelle.app.ui.setup_assistant import run_assistant, should_run
+
+    if "--setup" in (argv or []) or should_run(ctx.settings):
+        QTimer.singleShot(350, lambda: run_assistant(ctx, window))
     logging.getLogger("noelle").info("Noelle %s started", __version__)
     return app.exec()
 
