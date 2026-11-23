@@ -221,7 +221,14 @@ class H(BaseHTTPRequestHandler):
         final = {"choices": [{"delta": {}, "finish_reason": "stop"}],
                  "usage": {"prompt_tokens": 7, "completion_tokens": 3}}
         self.wfile.write(b"data: " + json.dumps(final).encode() + b"\n\ndata: [DONE]\n\n")
-ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind calls socket.getfqdn(), a reverse-DNS lookup that can stall for
+        # tens of seconds on CI runners; the real llama-server does not do this.
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
+Server(("127.0.0.1", port), H).serve_forever()
 '''
 
 
