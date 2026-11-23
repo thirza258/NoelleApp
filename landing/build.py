@@ -141,8 +141,8 @@ def head(title: str, description: str, url: str, prefix: str, root_links: bool =
   <meta property="og:url" content="{url}">
   <meta property="og:image" content="{BASE_URL}/assets/screens/mission-light.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FFC700" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0B0D" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/png" href="{asset}assets/favicon.png">
   <link rel="stylesheet" href="{asset}styles.css">
   <script>(function () {{ var t = null; try {{ t = localStorage.getItem("noelle-theme"); }} catch (e) {{}}

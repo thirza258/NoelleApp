@@ -1,4 +1,4 @@
-/* Noelle website — same palettes as the app: white (light) and neutral grey (dark). */
+/* Noelle website — Nevatal.id signature yellow (#FFC700) palette: light and neutral dark. */
 
 :root {
   --bg: #FFFFFF;
@@ -11,10 +11,11 @@
   --text-2: #3C3C43;
   --muted: #6B6B73;
   --faint: #8E8E96;
-  --accent: #6E5AE6;
-  --accent-hover: #5D49D6;
-  --accent-soft: rgba(110, 90, 230, 0.10);
-  --on-accent: #FFFFFF;
+  --accent: #FFC700;
+  --accent-text: #A67600;
+  --accent-hover: #E5B300;
+  --accent-soft: rgba(255, 199, 0, 0.16);
+  --on-accent: #0B0B0D;
   --success: #16A061;
   --code-bg: #F6F7F9;
   --code-text: #24292F;
@@ -38,10 +39,11 @@
     --text-2: #C8C8C8;
     --muted: #A0A0A0;
     --faint: #7A7A7A;
-    --accent: #8B7CF6;
-    --accent-hover: #9C8FF8;
-    --accent-soft: rgba(139, 124, 246, 0.16);
-    --on-accent: #0C0A1A;
+    --accent: #FFC700;
+    --accent-text: #FFD026;
+    --accent-hover: #FFD53D;
+    --accent-soft: rgba(255, 199, 0, 0.20);
+    --on-accent: #0B0B0D;
     --success: #3DBE84;
     --code-bg: #181818;
     --code-text: #D9D9D9;
@@ -61,10 +63,11 @@
   --text-2: #C8C8C8;
   --muted: #A0A0A0;
   --faint: #7A7A7A;
-  --accent: #8B7CF6;
-  --accent-hover: #9C8FF8;
-  --accent-soft: rgba(139, 124, 246, 0.16);
-  --on-accent: #0C0A1A;
+  --accent: #FFC700;
+  --accent-text: #FFD026;
+  --accent-hover: #FFD53D;
+  --accent-soft: rgba(255, 199, 0, 0.20);
+  --on-accent: #0B0B0D;
   --success: #3DBE84;
   --code-bg: #181818;
   --code-text: #D9D9D9;
@@ -83,7 +86,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 img { max-width: 100%; height: auto; display: block; }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--accent-text, var(--accent)); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code, pre { font-family: var(--mono); font-size: 0.88em; }
 :not(pre) > code { background: var(--surface-2); padding: 0.12em 0.4em; border-radius: 6px; color: var(--text-2); }
@@ -97,18 +100,19 @@ p { margin: 0 0 1em; }
 .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round;
         stroke-linejoin: round; flex: none; }
 .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.76rem; font-weight: 700;
-           color: var(--accent); margin-bottom: 0.8em; }
+           color: var(--accent-text, var(--accent)); margin-bottom: 0.8em; }
 .lead { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
 .fine { font-size: 0.88rem; color: var(--faint); }
-.accent { color: var(--accent); }
+.accent { color: var(--accent-text, var(--accent)); }
 
 /* ───────────────────────────── buttons ───────────────────────────── */
 .btn { display: inline-flex; align-items: center; gap: 0.5em; border-radius: 10px; font-weight: 600;
        border: 1px solid transparent; padding: 0.62em 1.1em; cursor: pointer; font-size: 0.98rem;
        transition: background 0.15s, border-color 0.15s, transform 0.15s; }
 .btn:hover { text-decoration: none; }
-.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-primary .icon { stroke: var(--on-accent); }
 .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-small { padding: 0.45em 0.85em; font-size: 0.9rem; }
