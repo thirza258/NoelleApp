@@ -211,7 +211,9 @@ def sitemap_footer(pages: list[Page], from_page: Page | None) -> str:
       </div>
       <div class="footer-bottom">
         <span>© <span data-year></span> Noelle · MIT License</span>
-        <span><a href="{home}#download" data-link="source">Source code</a> ·
+        <span><a href="{relative(from_page, 'docs/privacy/')}">Privacy Policy</a> ·
+          <a href="{relative(from_page, 'docs/terms/')}">Terms of Service</a> ·
+          <a href="{home}#download" data-link="source">Source code</a> ·
           <a href="{relative(from_page, 'sitemap.xml')}">sitemap.xml</a></span>
       </div>
     </div>

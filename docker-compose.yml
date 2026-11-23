@@ -1,0 +1,10 @@
+services:
+  landing:
+    build:
+      context: ./landing
+      dockerfile: Dockerfile
+    image: noelle-landing:latest
+    container_name: noelle-landing
+    restart: unless-stopped
+    ports:
+      - "${PORT:-10095}:80"

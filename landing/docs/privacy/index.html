@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy &amp; security — Noelle docs</title>
-  <meta name="description" content="What Noelle sends over the network, where your data and token are stored, and how the local API and model runtime are isolated.">
+  <meta name="description" content="How Noelle guarantees 100% local processing, zero telemetry, secure credential storage, and network transparency.">
   <link rel="canonical" href="https://noelle.nevatal.id/docs/privacy/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="Privacy &amp; security — Noelle docs">
-  <meta property="og:description" content="What Noelle sends over the network, where your data and token are stored, and how the local API and model runtime are isolated.">
+  <meta property="og:description" content="How Noelle guarantees 100% local processing, zero telemetry, secure credential storage, and network transparency.">
   <meta property="og:url" content="https://noelle.nevatal.id/docs/privacy/">
   <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -68,72 +68,127 @@
     </div>
   </header>
   <main class="container docs" id="top">
-    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/" aria-current="page">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></aside>
+    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/" aria-current="page">Privacy &amp; security</a></li><li><a href="../../docs/terms/">Terms of Service</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></aside>
     <article class="prose">
       <h1>Privacy &amp; security</h1>
-      <p class="page-lead">What Noelle sends over the network, where your data and token are stored, and how the local API and model runtime are isolated.</p>
-<p>Noelle is built so that <strong>your prompts, documents and answers never leave your computer</strong>.</p>
-<h2 id="what-goes-over-the-network">What goes over the network<a class="heading-anchor" href="#what-goes-over-the-network" aria-label="Link to this section">#</a></h2>
+      <p class="page-lead">How Noelle guarantees 100% local processing, zero telemetry, secure credential storage, and network transparency.</p>
+<p><strong>Effective Date:</strong> November 1, 2026 • <strong>Version:</strong> 1.1<br />
+<strong>Project:</strong> Noelle (<a href="https://noelle.nevatal.id" rel="noopener">noelle.nevatal.id</a>) • <strong>Ecosystem:</strong> <a href="https://nevatal.id" rel="noopener">nevatal.id</a></p>
+<p>Noelle is built on the principle of <strong>local data sovereignty</strong>: your prompts, documents, embeddings, and generated answers <strong>never leave your computer</strong>.</p>
+<hr />
+<h2 id="1-local-data-boundary-sovereignty-guarantee">1. Local Data Boundary &amp; Sovereignty Guarantee<a class="heading-anchor" href="#1-local-data-boundary-sovereignty-guarantee" aria-label="Link to this section">#</a></h2>
+<p>Noelle is a 100% local desktop model laboratory and inference gateway. Unlike cloud AI platforms and software-as-a-service providers that transmit your sensitive data over the internet:</p>
+<ul>
+<li><strong>Local Inference:</strong> All model generation, summarization, and chat completions execute directly on your local hardware (CPU/GPU) using isolated native runtimes (such as llama.cpp and local backends).</li>
+<li><strong>Local Knowledge &amp; Documents:</strong> Any files, PDFs, notes, or codebases you index for RAG (Retrieval-Augmented Generation) are chunked and embedded into local vector indexes stored on your own disk.</li>
+<li><strong>Zero Prompt Leakage:</strong> No prompt, document fragment, chat transcript, or evaluation metric is ever sent to external cloud AI providers (such as OpenAI, Anthropic, or OpenRouter) unless you deliberately configure external remote providers.</li>
+<li><strong>Zero Telemetry &amp; Tracking:</strong> Noelle contains <strong>no telemetry</strong>, no analytics trackers, no advertising pixels, and requires no account. Furthermore, Noelle explicitly disables background telemetry in third-party Python libraries (such as Hugging Face Hub telemetry).</li>
+</ul>
+<hr />
+<h2 id="2-what-goes-over-the-network">2. What Goes Over the Network<a class="heading-anchor" href="#2-what-goes-over-the-network" aria-label="Link to this section">#</a></h2>
+<p>Noelle communicates with external networks strictly for operations that you explicitly initiate:</p>
 <table class="table">
 <thead>
 <tr>
-<th>When</th>
-<th>Where to</th>
-<th>What</th>
+<th>Operation</th>
+<th>Destination</th>
+<th>Data Sent</th>
+<th>Security &amp; Verification</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Browsing Discover, opening a model</td>
-<td>huggingface.co</td>
-<td>Searches and model metadata</td>
+<td><strong>Browsing Discover</strong></td>
+<td><code>huggingface.co</code></td>
+<td>Model search keywords and metadata requests</td>
+<td>Encrypted HTTPS; anonymous requests</td>
 </tr>
 <tr>
-<td>Downloading a model</td>
-<td>huggingface.co</td>
-<td>The model files (verified by checksum)</td>
+<td><strong>Downloading Models</strong></td>
+<td><code>huggingface.co</code></td>
+<td>Standard GET requests for model weight files</td>
+<td>HTTPS; verified against published SHA256 checksums</td>
 </tr>
 <tr>
-<td>Gated models</td>
-<td>huggingface.co</td>
-<td>Your Hugging Face token, only if you added one</td>
+<td><strong>Gated / Restricted Models</strong></td>
+<td><code>huggingface.co</code></td>
+<td>Your personal Hugging Face user access token</td>
+<td>Transmitted securely over HTTPS only when authorized</td>
 </tr>
 <tr>
-<td>Optional components</td>
-<td>github.com</td>
-<td>The official llama.cpp release, only after you confirm</td>
+<td><strong>Optional Components</strong></td>
+<td><code>github.com</code></td>
+<td>GET requests for official llama.cpp releases</td>
+<td>Explicit user prompt; checksums validated before execution</td>
 </tr>
 <tr>
-<td>Web search in chat (optional)</td>
-<td>Your own SearXNG server</td>
-<td>The search queries</td>
+<td><strong>Web Search in Chat (Optional)</strong></td>
+<td>User-configured SearXNG</td>
+<td>Search query strings</td>
+<td>Directed only to your private self-hosted SearXNG endpoint</td>
 </tr>
 </tbody>
 </table>
-<p>Noelle has <strong>no telemetry</strong> and no account, and it turns off telemetry in the libraries it uses.</p>
-<h2 id="the-model-runtime">The model runtime<a class="heading-anchor" href="#the-model-runtime" aria-label="Link to this section">#</a></h2>
-<p>Models run in a separate process. It is started with Hugging Face's offline mode switched on and <strong>never receives
-your Hugging Face token</strong>. Commands between the app and the runtime use a random per-session key over the local
-machine only.</p>
-<h2 id="your-token">Your token<a class="heading-anchor" href="#your-token" aria-label="Link to this section">#</a></h2>
-<p>The Hugging Face token is stored in the operating system's credential store — Keychain on macOS, Credential Manager
-on Windows, Secret Service on Linux — never in a settings file or log.</p>
-<h2 id="the-local-api">The local API<a class="heading-anchor" href="#the-local-api" aria-label="Link to this section">#</a></h2>
+<p>There are <strong>zero automatic or unsolicited background downloads</strong>. Optional tools and runtime updates always display their file size, origin repository, destination path, and SHA256 checksum, requiring your manual confirmation.</p>
+<hr />
+<h2 id="3-runtime-process-isolation">3. Runtime &amp; Process Isolation<a class="heading-anchor" href="#3-runtime-process-isolation" aria-label="Link to this section">#</a></h2>
+<p>Models run in a dedicated, isolated subprocess separate from the primary user interface:</p>
 <ul>
-<li>Listens on <code>127.0.0.1</code> only.</li>
-<li>Answers only requests addressed to <code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>, so a website cannot reach it through DNS
-rebinding.</li>
-<li>JSON endpoints require <code>Content-Type: application/json</code>, so web pages cannot send it simple form posts.</li>
-<li>An optional API key protects it from other programs on the same computer.</li>
+<li><strong>Offline Mode Enforcement:</strong> The runtime process starts with Hugging Face offline mode enabled (<code>HF_HUB_OFFLINE=1</code>), ensuring it cannot make unauthorized outbound connections during inference.</li>
+<li><strong>Token Isolation:</strong> The runtime process <strong>never receives your Hugging Face API token</strong> or system credentials.</li>
+<li><strong>Local Inter-Process Communication:</strong> Communication between the desktop application and the worker service is confined to localhost using an ephemeral, cryptographically random per-session token.</li>
 </ul>
-<h2 id="code-from-model-repositories">Code from model repositories<a class="heading-anchor" href="#code-from-model-repositories" aria-label="Link to this section">#</a></h2>
-<p>Repositories that ship their own Python code are blocked until you allow them — once, per repository or per
-publisher. See <a href="../../docs/models/#repositories-that-run-their-own-code">Models &amp; builds</a>.</p>
-<h2 id="downloads-you-didn-t-ask-for">Downloads you didn't ask for<a class="heading-anchor" href="#downloads-you-didn-t-ask-for" aria-label="Link to this section">#</a></h2>
-<p>There are none. Optional components such as the llama.cpp tools show their version, size, source and destination
-and wait for your confirmation; their checksums are verified before installation.</p>
+<hr />
+<h2 id="4-credential-secret-management">4. Credential &amp; Secret Management<a class="heading-anchor" href="#4-credential-secret-management" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Operating System Credential Vaults:</strong> Your Hugging Face user access tokens and optional API keys are stored exclusively in your operating system's native secure credential storage:
+<ul>
+<li><strong>macOS:</strong> Keychain Services</li>
+<li><strong>Windows:</strong> Windows Credential Manager</li>
+<li><strong>Linux:</strong> Secret Service API (Freedesktop Secret Service / Keyring)</li>
+</ul>
+</li>
+<li><strong>No Plaintext Leaks:</strong> Credentials are never written to plain-text configuration files, debug logs, or crash dumps.</li>
+</ul>
+<hr />
+<h2 id="5-local-api-security-dns-rebinding-protection">5. Local API Security &amp; DNS Rebinding Protection<a class="heading-anchor" href="#5-local-api-security-dns-rebinding-protection" aria-label="Link to this section">#</a></h2>
+<p>Noelle includes an OpenAI-compatible local HTTP server for developer integrations (CLI, MCP, and external coding agents):</p>
+<ul>
+<li><strong>Localhost Binding:</strong> Binds strictly to loopback interfaces (<code>127.0.0.1</code> and <code>::1</code>).</li>
+<li><strong>Host Header Validation:</strong> Rejects any HTTP request whose <code>Host</code> header does not match <code>127.0.0.1</code>, <code>localhost</code>, or <code>[::1]</code>, neutralizing DNS rebinding attacks from malicious websites.</li>
+<li><strong>Content-Type Enforcement:</strong> Endpoints require strict <code>Content-Type: application/json</code> headers to prevent cross-origin form submissions.</li>
+<li><strong>Optional API Key Authentication:</strong> An optional local bearer token can be configured to restrict API access from other unprivileged programs on the local system.</li>
+</ul>
+<hr />
+<h2 id="6-model-code-execution-safeguards">6. Model Code Execution Safeguards<a class="heading-anchor" href="#6-model-code-execution-safeguards" aria-label="Link to this section">#</a></h2>
+<p>Certain model repositories on Hugging Face distribute custom Python execution scripts (<code>trust_remote_code=True</code>). Noelle blocks automated execution of arbitrary repository code by default:</p>
+<ul>
+<li>Remote code execution is quarantined until you explicitly review and grant permission.</li>
+<li>Permissions can be granted once, remembered per-repository, or allowed per-publisher. See <a href="../../docs/models/#repositories-that-run-their-own-code">Models &amp; builds</a>.</li>
+</ul>
+<hr />
+<h2 id="7-website-cookies-server-logs-landing-page-docs">7. Website, Cookies &amp; Server Logs (Landing Page &amp; Docs)<a class="heading-anchor" href="#7-website-cookies-server-logs-landing-page-docs" aria-label="Link to this section">#</a></h2>
+<p>When visiting the Noelle website (<a href="https://noelle.nevatal.id" rel="noopener">noelle.nevatal.id</a>):</p>
+<ul>
+<li><strong>No Cookies or Trackers:</strong> We do not use advertising cookies, third-party analytics (like Google Analytics), or cross-site tracking beacons.</li>
+<li><strong>Local Storage:</strong> The website uses browser <code>localStorage</code> solely to persist your theme preference (<code>light</code> or <code>dark</code>).</li>
+<li><strong>Server Access Logs:</strong> Our self-hosted Nginx web server records standard transient connection logs (IP address, user agent, request timestamp) strictly for DDoS mitigation, caching, and performance diagnostics. These logs are never merged with personal identifiers or shared with third parties.</li>
+</ul>
+<hr />
+<h2 id="8-data-retention-portability-user-rights">8. Data Retention, Portability &amp; User Rights<a class="heading-anchor" href="#8-data-retention-portability-user-rights" aria-label="Link to this section">#</a></h2>
+<p>Because all data resides locally on your hardware, you retain 100% control over your assets:</p>
+<ul>
+<li><strong>Model Weights &amp; Cache:</strong> You can purge downloaded models or individual quantizations directly through the app's Storage tab or by deleting <code>~/.cache/noelle/</code>.</li>
+<li><strong>Chat Histories &amp; Evaluations:</strong> Benchmark runs and conversation sessions can be cleared or exported in standard formats at any time.</li>
+<li><strong>Credential Removal:</strong> You can revoke or wipe saved Hugging Face tokens instantly via the Setup Assistant or your OS credential manager.</li>
+</ul>
+<hr />
+<h2 id="9-contact-inquiries">9. Contact &amp; Inquiries<a class="heading-anchor" href="#9-contact-inquiries" aria-label="Link to this section">#</a></h2>
+<p>Noelle is an open-source project published under the MIT License within the <strong><a href="https://nevatal.id" rel="noopener">nevatal.id</a></strong> ecosystem. See also our <a href="../../docs/terms/">Terms of Service</a>.</p>
+<p>For privacy inquiries, security disclosures, or questions regarding this deployment, please contact us directly at:<br />
+📧 <strong><a href="mailto:nevatalapp@gmail.com">nevatalapp@gmail.com</a></strong></p>
 
-      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/cli/"><span>Previous</span><b>Command line</b></a><a class="next" href="../../docs/troubleshooting/"><span>Next</span><b>Troubleshooting</b></a></nav>
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/cli/"><span>Previous</span><b>Command line</b></a><a class="next" href="../../docs/terms/"><span>Next</span><b>Terms of Service</b></a></nav>
     </article>
   </main>
   <footer class="site-footer">
@@ -145,11 +200,13 @@ and wait for your confirmation; their checksums are verified before installation
         </div>
         <div><h4>Product</h4><ul><li><a href="../../#features">Features</a></li><li><a href="../../#how">How it works</a></li><li><a href="../../#privacy">Privacy</a></li><li><a href="../../#developers">Developers</a></li><li><a href="../../#download">Download</a></li><li><a href="../../#faq">FAQ</a></li></ul></div>
         <div><h4>Documentation</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul></div>
-        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/terms/">Terms of Service</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></div>
       </div>
       <div class="footer-bottom">
         <span>© <span data-year></span> Noelle · MIT License</span>
-        <span><a href="../../#download" data-link="source">Source code</a> ·
+        <span><a href="../../docs/privacy/">Privacy Policy</a> ·
+          <a href="../../docs/terms/">Terms of Service</a> ·
+          <a href="../../#download" data-link="source">Source code</a> ·
           <a href="../../sitemap.xml">sitemap.xml</a></span>
       </div>
     </div>
