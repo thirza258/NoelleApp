@@ -1,9 +1,11 @@
 # Noelle Desktop AI Studio
 
-Noelle is a local-first desktop workbench for open-weight models from the Hugging Face Hub. You can discover a model,
-check whether it fits your hardware, download it with checksum verification, run it in a playground for its modality,
-compare several models on one prompt, index your own documents for grounded answers, and serve everything through a
-local OpenAI-compatible API. Inference, document indexing and audio processing all run on your machine.
+Noelle is a local-first desktop workbench — a small model lab — for open-weight models from the Hugging Face Hub. Tell
+it what you want to build and it proposes a stack that fits your hardware; or discover a model yourself, see a 0–100
+score for how well it will run here and the best way to run it, download it with checksum verification, try it in a
+playground, evaluate several models on a dataset, index your own documents for grounded answers, and serve everything
+through a local OpenAI-compatible API or to coding agents over MCP. Inference, document indexing and audio processing all
+run on your machine.
 
 Version 1.0.0 replaces the previous Django + React web app that lived in this repository.
 
@@ -11,19 +13,23 @@ Version 1.0.0 replaces the previous Django + React web app that lived in this re
 
 | Area | What you get |
 |---|---|
-| **Discover** | Live Hub catalog by modality (text, vision, audio, diffusion, embeddings) with search, sorting and infinite scroll. A trending hero collapses (250 ms) when you scroll, so the grid gets the full width. Every card has a hardware badge: **green** runs natively, **yellow** needs a 4-bit build, **red** CPU fallback or too large. |
-| **Workspace** | Model facts, a per-precision memory table, resumable verified downloads, and runtime controls for precision, device and quantized builds. Playgrounds for chat (streaming with TTFT and tok/s), vision Q&A, detection, classification, speech recognition (file or microphone), speech synthesis, text-to-image with live latent previews, and embeddings. |
-| **Grounding** | Local RAG covers PDF, DOCX, Markdown and text, with 512/64 token-aware chunks, on-device embeddings and sqlite-vec search, and shows citations. Optional web grounding goes through your own SearXNG instance. |
+| **Mission** | Describe a goal ("a local Indonesian legal assistant for my PDF contracts", "…with 16 GB RAM and an RTX 3060"). Noelle detects the task, languages and stated hardware, searches the Hub, scores every candidate for that hardware and proposes a stack (LLM + embedding model + vector store) with memory estimates and alternatives. It then runs the plan step by step — download → build → index → test → serve — asking before anything is downloaded, converted or started. |
+| **Discover** | Live Hub catalog by modality (text, vision, audio, diffusion, embeddings) with search, sorting and infinite scroll. A trending hero collapses (250 ms) when you scroll, so the grid gets the full width. Every card shows a 0–100 compatibility score with a badge: **green** runs natively, **yellow** needs a 4-bit build, **red** CPU fallback or too large. |
+| **Workspace** | **Analysis** tab: the score broken into memory fit, runtime, precision, context and trust; "How should I run this?" — every build (FP16, INT8, NF4, AWQ, GPTQ, 4-bit MLX, GGUF) with memory, fit, quality, speed (measured on this machine when available, otherwise a labelled estimate) and whether it is ready, needs a one-time build, an optional component or cannot run here; the largest context that fits; capabilities (inputs/outputs, chat template, tool calling, languages, licence, remote code). **Runtime profiles** (Balanced, Quality, Fast, Low memory, Max context) pick the build for you. Repositories with their own Python code show the files and offer *Allow once*, *Trust repository* or *Trust publisher*. Plus provenance (revision, download date), resumable verified downloads and playgrounds for chat, vision Q&A, detection, classification, speech recognition, speech synthesis, text-to-image and embeddings. |
+| **Evaluate** | The Evaluation Lab: run built-in or your own JSONL datasets (reasoning, JSON output, instruction following, sentiment, coding, Indonesian Q&A, EN→ID translation, chat latency) against several local models. Cases are scored locally and deterministically (exact, contains, regex, numeric, choice, JSON checks — generated code is never executed). Every run is saved as an experiment with the dataset digest, generation settings, hardware and each model's revision, with history, JSON/Markdown export and a performance matrix built from your own runs. |
+| **Knowledge** | RAG Studio: knowledge bases built from PDF, DOCX, Markdown, text and code files, with token-aware chunks (512/64 by default, adjustable per base), on-device embeddings and sqlite-vec search with citations. A retrieval **evaluation** tab scores a set of questions (hit rate, recall, precision, MRR and nDCG at k) and compares two bases side by side — e.g. two chunk sizes or two embedding models. Chat in the Workspace grounds answers in a base, optionally with web results from your own SearXNG instance. |
 | **Optimize** | One-click 4-bit quantization: MLX on Apple Silicon; AWQ, GPTQ and bitsandbytes NF4 on CUDA; GGUF with llama.cpp tools. LoRA adapters attach to a loaded model and switch without reloading the base weights. |
-| **Compare** | 1, 2 or 4 views with a broadcast prompt. A sequential GPU queue runs View 1 → View 4 and either keeps every model loaded (retain) or unloads each before the next (hot-swap, with `gc.collect()` and the cache flushed). Produces a benchmark matrix (TTFT, tok/s, peak memory, precision) with JSON and Markdown export. |
-| **Developer** | OpenAI-compatible server on `127.0.0.1` for `/v1/chat/completions` (SSE), `/v1/embeddings`, `/v1/audio/transcriptions` and `/v1/models`. Also exports a standalone `inference.py`, a CUDA `Dockerfile` and `server.py`, and includes an embedded Jupyter console (`noelle.load_model(...)`). |
-| **Storage** | Hugging Face cache visualizer showing repos, revisions and partial files. You can prune unfinished downloads or detached revisions, delete repos, and move the cache to another drive. |
+| **Compare** | 1, 2 or 4 views with a broadcast prompt. A sequential GPU queue runs View 1 → View 4 and either keeps every model loaded (retain) or unloads each before the next (hot-swap, with `gc.collect()` and the cache flushed). Produces a benchmark matrix (TTFT, tok/s, peak memory, precision) with JSON and Markdown export; runs also appear in the Evaluation Lab history. |
+| **Developer** | Local AI gateway on `127.0.0.1`: OpenAI-compatible `/v1/chat/completions` (SSE), `/v1/embeddings`, `/v1/audio/transcriptions`, `/v1/images/generations` and `/v1/models`, plus `/v1/knowledge` search. Model **aliases** (`noelle-chat`, `noelle-code`, …) and `model: "auto"` routing (code → code model, embeddings → embedding model, …). `noelle mcp` exposes the same to coding agents. Also exports a standalone `inference.py`, a CUDA `Dockerfile` and `server.py`, and includes an embedded Jupyter console (`noelle.load_model(...)`). |
+| **Storage** | Hugging Face cache visualizer showing repos, revisions and partial files, with a **Storage Advisor**: active vs unused (90+ days) models, partial downloads, old revisions, local builds and the space a cleanup would free. Prune, delete repos, and move the cache to another drive. |
+| **Appearance** | Light (white) and Dark (neutral grey) themes, or follow the operating system (Settings › Appearance). |
 
 ## Architecture
 
 ```
 PySide6 desktop shell  (never imports torch)
- ├─ Discover · Workspace · Compare · Storage · API Server pages
+ ├─ Discover · Mission · Workspace · Knowledge · Evaluate · Compare · Storage · API pages
+ ├─ model intelligence (pure Python, shared with CLI/MCP): capability registry · runtime/quantization advisor
  ├─ services: HF client (keyring token) · hardware telemetry · download manager · registry (SQLite WAL)
  └─ IPC: ZeroMQ DEALER on a dedicated QThread
         │  tcp://127.0.0.1:<random port>, per-session auth token
@@ -81,6 +87,36 @@ On Linux/Windows with NVIDIA GPUs, install the CUDA build of PyTorch first.
 | `noelle server --port 8765 --worker-endpoint tcp://127.0.0.1:<p>` | OpenAI-compatible server |
 | `noelle download <repo> [--include PATTERN] [--local-dir DIR]` | Verified download with JSON progress |
 | `noelle env create <name> --profile base --profile rag` | Isolated runtime environment |
+| `noelle env export <name> -o noelle-env.yaml` / `noelle env import noelle-env.yaml` | Pinned lockfile to rebuild an environment exactly |
+| `noelle analyze <repo> [--profile fast] [--json]` | Compatibility score, run options and recommendation for this machine |
+| `noelle run -m <model> "prompt"` | One prompt to a local model, streamed to stdout (`--metrics` for TTFT and tok/s) |
+| `noelle eval -m <model> -d builtin:reasoning-math [-t accuracy>=0.8]` | Evaluation Lab from the terminal; exit code 1 when a threshold or `--baseline` check fails |
+| `noelle mcp [--print-config]` | Model Context Protocol server on stdio |
+
+### Evaluation Lab in CI
+
+`noelle eval` runs datasets in a private worker, saves the run in the experiment history and prints a leaderboard.
+Thresholds and a previous run turn it into a regression gate:
+
+```bash
+noelle eval --list-datasets
+noelle eval -m HuggingFaceTB/SmolLM2-360M-Instruct -d builtin:reasoning-math -d ./my-cases.jsonl \
+    -t "accuracy>=0.6" -t "tok_s>=20" -t "ttft_ms<=1500" --json results.json --markdown report.md
+noelle eval --recipe nightly.yaml --baseline last-week.json --max-regression 0.1
+```
+
+A recipe bundles a run:
+
+```yaml
+name: nightly
+models: [HuggingFaceTB/SmolLM2-360M-Instruct, local/SmolLM2-360M-Instruct-mlx-4bit]
+datasets: [builtin:instruction-following, ./support-tickets.jsonl]
+params: {max_new_tokens: 256, temperature: 0}
+thresholds: [accuracy>=0.7, tok_s>=25]
+```
+
+Dataset files are JSONL: an optional `{"_dataset": {"name", "title", "description"}}` line, then one case per line —
+`{"id", "prompt" | "messages", "expected", "scorer": "exact|contains|contains_all|regex|numeric|choice|json|none"}`.
 
 ### Using the API from other tools
 
@@ -93,6 +129,35 @@ for chunk in client.chat.completions.create(model="HuggingFaceTB/SmolLM2-135M-In
 ```
 
 The API Server page has copy-ready snippets for curl, Cursor, Continue and LangChain.
+
+### MCP server
+
+`noelle mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio, so coding agents such
+as Claude Code or Cursor can use Noelle as a set of tools. To register it with Claude Code:
+
+```bash
+claude mcp add noelle -- noelle mcp
+```
+
+Other clients take a JSON entry. `noelle mcp --print-config` prints one with the exact command for your install: the
+virtualenv's Python for a source checkout, the app executable for a packaged install. If `noelle` is not on your
+PATH, run the app executable instead, for example `/Applications/Noelle.app/Contents/MacOS/Noelle mcp --print-config`
+on macOS.
+
+| Tool | What it does |
+|---|---|
+| `hardware_info` | Accelerator, memory budget, memory bandwidth and installed engines |
+| `list_local_models` | Models downloaded or built in Noelle (`api_name` is what `chat` and `embed` take) |
+| `search_models` | Hub search with a 0–100 fit score for this machine |
+| `inspect_model` | What a Hub repository is and how to run it here: run options, recommendation, largest context, speed |
+| `chat` | Chat completion with a local model (`"model": "auto"` lets Noelle choose) |
+| `embed` | Embedding vectors from a local embedding model |
+| `list_knowledge_bases`, `query_knowledge_base` | Search your indexed document collections |
+
+`chat`, `embed` and the knowledge-base tools call Noelle's API server, so start it on the API Server page first. The
+MCP server reads the port and API key from Noelle's settings; `--api-url` overrides the address. It only sends
+requests to 127.0.0.1, localhost or ::1, so prompts never leave your machine. `search_models` and `inspect_model`
+query the Hugging Face Hub. There are no tools to download, load or delete models, and no file or shell access.
 
 ## Data locations
 

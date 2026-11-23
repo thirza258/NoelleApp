@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from noelle import __version__, paths
+from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.services import hf_client
 from noelle.app.services.task_runner import runner
@@ -42,6 +43,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.runtime_restart_needed = False
+        self.theme_changed = False
         self._before = {key: ctx.settings.get(key) for key in RUNTIME_KEYS}
         self._env_stop: threading.Event | None = None
         self.setWindowTitle("Settings")
@@ -51,6 +53,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.setDocumentMode(True)
         tabs.addTab(self._account_tab(), "Account")
+        tabs.addTab(self._appearance_tab(), "Appearance")
         tabs.addTab(self._runtime_tab(), "Runtime")
         tabs.addTab(self._environments_tab(), "Environments")
         tabs.addTab(self._storage_tab(), "Storage")
@@ -95,6 +98,24 @@ class SettingsDialog(QDialog):
         create = button("Create a token on huggingface.co", "external", "link")
         create.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://huggingface.co/settings/tokens")))
         layout.addWidget(create)
+        layout.addStretch(1)
+        return page
+
+    def _appearance_tab(self) -> QWidget:
+        page, layout = self._page()
+        layout.addWidget(label("Theme", "h3"))
+        layout.addWidget(label("Light uses a white window; Dark uses neutral greys. “Match system” follows your "
+                               "operating system's appearance each time Noelle starts.", "muted", wrap=True))
+        form = QFormLayout()
+        self.theme_choice = QComboBox()
+        for key, text in theme.THEMES.items():
+            self.theme_choice.addItem(text, key)
+        current = str(self.ctx.settings.get("ui.theme") or "system")
+        self.theme_choice.setCurrentIndex(max(self.theme_choice.findData(current), 0))
+        form.addRow("Theme", self.theme_choice)
+        layout.addLayout(form)
+        layout.addWidget(Banner("info", "Noelle restarts to apply a new theme. Downloads in progress pause and "
+                                        "resume afterwards."))
         layout.addStretch(1)
         return page
 
@@ -405,5 +426,8 @@ class SettingsDialog(QDialog):
             "rag.chunk_tokens": self.chunk.value(),
             "rag.chunk_overlap": self.overlap.value(),
         })
+        theme_choice = self.theme_choice.currentData() or "system"
+        self.theme_changed = theme_choice != (s.get("ui.theme") or "system")
+        s.set("ui.theme", theme_choice)
         self.runtime_restart_needed = any(s.get(k) != v for k, v in self._before.items())
         self.accept()

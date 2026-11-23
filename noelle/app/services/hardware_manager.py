@@ -199,5 +199,23 @@ class HardwareManager(QObject):
             self.gpu.total_memory = int(memory["total"])
 
 
+def probe_profile(headroom: float = DEFAULT_HEADROOM, backends: dict[str, bool] | None = None) -> Any:
+    """Hardware profile for the advisor without a running worker (CLI, MCP server, tests).
+
+    Uses the same fallbacks as :meth:`HardwareManager.memory_budget` when no worker heartbeat exists.
+    """
+    from noelle.runtime import advisor, capabilities
+
+    gpu = detect_gpu()
+    ram = psutil.virtual_memory().total
+    if gpu.total_memory:
+        budget = MemoryBudget(int(gpu.total_memory), headroom, ram, gpu.kind)
+    else:
+        budget = MemoryBudget(int(ram * 0.7), headroom, ram, "cpu")
+    return advisor.HardwareProfile(budget.device, gpu.name, budget,
+                                   dict(backends if backends is not None else capabilities.detect_backends_cached()),
+                                   advisor.memory_bandwidth(gpu.name, budget.device))
+
+
 def describe_gb(value: int | None) -> str:
     return "—" if value is None else f"{value / GB:.1f} GB"

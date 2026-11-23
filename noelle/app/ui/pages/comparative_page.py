@@ -203,7 +203,7 @@ class ComparativePage(QWidget):
             record = self._record_for(key)
             if record is None:
                 continue
-            entry = {**record.worker_payload(), "view": pane.view}
+            entry = {**record.worker_payload(self.ctx.settings), "view": pane.view}
             if not self.broadcast.isChecked():
                 entry["prompt"] = pane.prompt.text().strip() or prompt
             views.append(entry)
@@ -284,7 +284,28 @@ class ComparativePage(QWidget):
                 system_prompt=run["payload"].get("system_prompt"), params=run["payload"]["params"],
                 output=result.get("text", ""), status=result.get("status", ""), metrics=result.get("metrics") or {})
         self.export_btn.setEnabled(bool(run.get("results")))
+        self._record_experiment(run)
         self.ctx.toast(f"Benchmark finished in {summary.get('total_ms', 0) / 1000:.1f} s", "success")
+
+    def _record_experiment(self, run: dict[str, Any]) -> None:
+        """Also keep the run in the Evaluation Lab history (with model provenance and hardware)."""
+        from noelle.app.services import experiments
+
+        try:
+            records = {}
+            for view, result in run.get("results", {}).items():
+                key = f"{result.get('model_id')}|{(result.get('metrics') or {}).get('precision') or 'auto'}"
+                records[int(view)] = self._record_for(key)
+            payload = run.get("payload") or {}
+            experiments.record_compare(
+                self.ctx.registry, prompt=payload.get("prompt") or "", system_prompt=payload.get("system_prompt"),
+                params=payload.get("params") or {}, results=list(run.get("results", {}).values()), records=records,
+                hardware=experiments.hardware_snapshot(self.ctx.hardware_profile(),
+                                                       getattr(self.ctx.runtime, "last_heartbeat_payload", None)))
+        except Exception:  # history is a convenience; never fail the bench for it
+            import logging
+
+            logging.getLogger("noelle.ui").exception("could not record the compare run as an experiment")
 
     def _on_failed(self, payload: dict[str, Any]) -> None:
         self._finish_run()

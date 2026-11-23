@@ -131,9 +131,11 @@ def test_desktop_shell_never_imports_torch() -> None:
         from noelle.app.ui.main_window import MainWindow
         ctx = appmain.build_context()
         window = MainWindow(ctx)
-        for key in ("discover", "workspace", "compare", "storage", "server"):
+        from noelle.app.ui.navigation_bar import PAGES
+        for key, _text, _icon in PAGES:
             window.navigate(key)
         window.pages["workspace"].set_model("org/some-model")
+        window.pages["workspace"].tabs.setCurrentWidget(window.pages["workspace"].analysis_tab)
         from noelle.app.ui.settings_dialog import SettingsDialog
         SettingsDialog(ctx, window)
         heavy = sorted(m for m in ("torch", "transformers", "diffusers", "mlx", "sentence_transformers")

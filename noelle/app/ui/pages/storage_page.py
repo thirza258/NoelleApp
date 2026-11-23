@@ -126,6 +126,24 @@ class StoragePage(QWidget):
             tiles.addWidget(tile)
         root.addLayout(tiles)
 
+        self.advisor = Panel()
+        advisor_layout = QVBoxLayout(self.advisor)
+        advisor_layout.setContentsMargins(14, 10, 14, 10)
+        advisor_layout.setSpacing(6)
+        advisor_head = QHBoxLayout()
+        advisor_head.addWidget(label("STORAGE ADVISOR", "eyebrow"))
+        advisor_head.addStretch(1)
+        self.advisor_total = label("", "h3")
+        advisor_head.addWidget(self.advisor_total)
+        advisor_layout.addLayout(advisor_head)
+        self.advisor_breakdown = label("", "muted", wrap=True)
+        advisor_layout.addWidget(self.advisor_breakdown)
+        self.advisor_rows = QVBoxLayout()
+        self.advisor_rows.setSpacing(4)
+        advisor_layout.addLayout(self.advisor_rows)
+        self.advisor.hide()
+        root.addWidget(self.advisor)
+
         self.warnings = Banner("warning", "")
         self.warnings.hide()
         root.addWidget(self.warnings)
@@ -216,6 +234,7 @@ class StoragePage(QWidget):
         self.tile_disk.set(format_bytes(disk.get("free", 0)), f"of {format_bytes(disk.get('total', 0))}")
         self.prune_incomplete_btn.setEnabled(report.incomplete_bytes > 0)
         self.prune_detached_btn.setEnabled(report.detached_bytes > 0)
+        self._render_advice(usage)
         if report.warnings:
             self.warnings.set_text("<br>".join(report.warnings[:5]))
             self.warnings.show()
@@ -268,6 +287,27 @@ class StoragePage(QWidget):
             bar.setRange(0, 1000)
             bar.setValue(int(usage[key] / total * 1000))
             self.usage_rows.addWidget(bar)
+
+    def _render_advice(self, usage: dict[str, int]) -> None:
+        from noelle.app.services.storage_advisor import advise
+
+        advice = advise(self.report, self.ctx.registry.list_models(), usage)
+        self.advisor_total.setText(f"Potential cleanup: {format_bytes(advice.potential_bytes)}")
+        self.advisor_breakdown.setText(
+            f"Active models {format_bytes(advice.active_bytes)} · not used for {advice.unused_days}+ days "
+            f"{format_bytes(advice.unused_bytes)} · partial downloads {format_bytes(advice.partial_bytes)} · "
+            f"old revisions {format_bytes(advice.old_revision_bytes)} · local builds "
+            f"{format_bytes(advice.derived_bytes)}")
+        clear_layout(self.advisor_rows)
+        for item in advice.unused[:5]:
+            row = QHBoxLayout()
+            row.addWidget(label(item.repo_id), 1)
+            row.addWidget(label(f"{format_bytes(item.size_bytes)} · not used for {item.days} days", "faint"))
+            delete = button("Delete…", "trash", "ghost")
+            delete.clicked.connect(lambda _=False, repo=item.repo_id: self._delete_repo(repo))
+            row.addWidget(delete)
+            self.advisor_rows.addLayout(row)
+        self.advisor.setVisible(bool(self.report.repos))
 
     # -------------------------------------------------------------- downloads
     def _on_download(self, repo_id: str) -> None:

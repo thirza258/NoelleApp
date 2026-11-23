@@ -1,0 +1,11 @@
+{"_dataset": {"name": "indonesian-qa", "title": "Indonesian general knowledge", "category": "indonesian", "description": "Pertanyaan pengetahuan umum dalam bahasa Indonesia; jawaban dicocokkan dengan kata kunci."}}
+{"id": "id01", "prompt": "Jawab dengan singkat dalam bahasa Indonesia: Siapa presiden pertama Republik Indonesia?", "expected": ["Soekarno", "Sukarno"], "scorer": "contains"}
+{"id": "id02", "prompt": "Jawab dengan singkat: Apa nama mata uang Indonesia?", "expected": ["Rupiah"], "scorer": "contains"}
+{"id": "id03", "prompt": "Jawab dengan singkat: Pada tanggal dan bulan apa Indonesia memperingati Hari Kemerdekaan?", "expected": ["17 Agustus"], "scorer": "contains"}
+{"id": "id04", "prompt": "Jawab dengan singkat: Candi Buddha terbesar di dunia yang terletak di Jawa Tengah bernama apa?", "expected": ["Borobudur"], "scorer": "contains"}
+{"id": "id05", "prompt": "Jawab dengan singkat: Danau vulkanik terbesar di Indonesia yang terletak di Sumatera Utara bernama apa?", "expected": ["Toba"], "scorer": "contains"}
+{"id": "id06", "prompt": "Jawab dengan singkat: Apa ibu kota provinsi Jawa Barat?", "expected": ["Bandung"], "scorer": "contains"}
+{"id": "id07", "prompt": "Jawab dengan singkat: Burung apa yang menjadi lambang negara Indonesia?", "expected": ["Garuda"], "scorer": "contains"}
+{"id": "id08", "prompt": "Jawab dengan singkat: Apa semboyan nasional Indonesia?", "expected": ["Bhinneka Tunggal Ika"], "scorer": "contains"}
+{"id": "id09", "prompt": "Jawab dengan singkat: Agama apa yang dianut oleh mayoritas penduduk Pulau Bali?", "expected": ["Hindu"], "scorer": "contains"}
+{"id": "id10", "prompt": "Jawab dengan angka saja: Berapa hasil dari 12 dikali 8?", "expected": 96, "scorer": "numeric"}

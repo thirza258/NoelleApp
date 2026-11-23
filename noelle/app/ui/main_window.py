@@ -64,13 +64,19 @@ class MainWindow(QMainWindow):
 
         from noelle.app.ui.pages.comparative_page import ComparativePage
         from noelle.app.ui.pages.discovery_page import DiscoveryPage
+        from noelle.app.ui.pages.evaluate_page import EvaluatePage
+        from noelle.app.ui.pages.knowledge_page import KnowledgePage
+        from noelle.app.ui.pages.mission_page import MissionPage
         from noelle.app.ui.pages.model_detail_page import ModelDetailPage
         from noelle.app.ui.pages.server_page import ServerPage
         from noelle.app.ui.pages.storage_page import StoragePage
 
         self.pages: dict[str, QWidget] = {
             "discover": DiscoveryPage(ctx),
+            "mission": MissionPage(ctx),
             "workspace": ModelDetailPage(ctx),
+            "knowledge": KnowledgePage(ctx),
+            "evaluate": EvaluatePage(ctx),
             "compare": ComparativePage(ctx),
             "storage": StoragePage(ctx),
             "server": ServerPage(ctx),
@@ -78,7 +84,9 @@ class MainWindow(QMainWindow):
         for page in self.pages.values():
             self.stack.addWidget(page)
         self.pages["discover"].model_selected.connect(self.open_model)  # type: ignore[attr-defined]
+        self.pages["knowledge"].collections_changed.connect(self._knowledge_changed)  # type: ignore[attr-defined]
 
+        ctx.runtime.models_changed.connect(self._record_model_use)
         ctx.runtime.state_changed.connect(self._on_runtime_state)
         ctx.runtime.worker_crashed.connect(self._on_worker_crashed)
         ctx.hardware.hardware_telemetry_updated.connect(self.telemetry.update_metrics)
@@ -87,7 +95,9 @@ class MainWindow(QMainWindow):
         ctx.downloads.job_finished.connect(self._on_download_finished)
         self.telemetry.set_runtime_state(ctx.runtime.state)
 
-        for index, key in enumerate(("discover", "workspace", "compare", "storage", "server"), start=1):
+        from noelle.app.ui.navigation_bar import PAGES
+
+        for index, key in enumerate([key for key, _text, _icon in PAGES][:9], start=1):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{index}"), self)
             shortcut.activated.connect(lambda k=key: self.navigate(k))
         self.navigate("discover")
@@ -109,7 +119,7 @@ class MainWindow(QMainWindow):
         def done(added: list[str]) -> None:
             if added:
                 self.toast(f"Found {len(added)} model(s) already on this machine — see Discover › Downloaded.", "success")
-                for key in ("discover", "compare", "storage"):
+                for key in ("discover", "evaluate", "compare", "storage"):
                     refresh = getattr(self.pages[key], "on_library_changed", None)
                     if callable(refresh):
                         refresh()
@@ -143,9 +153,22 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.ctx, self)
         if dialog.exec():
             self._refresh_account()
+            if dialog.theme_changed:
+                answer = QMessageBox.question(self, "Restart Noelle?",
+                                              "The new theme is applied when Noelle restarts. Restart now?",
+                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if answer == QMessageBox.StandardButton.Yes:
+                    self.restart_app()
+                    return
             if dialog.runtime_restart_needed:
                 self.toast("Runtime settings changed — restarting the model runtime.", "info")
                 self._restart_runtime()
+
+    def restart_app(self) -> None:
+        """Close this window (with the usual download check) and start a fresh instance."""
+        self._relaunch = True
+        if not self.close():
+            self._relaunch = False
 
     # ------------------------------------------------------------ handlers
     def _refresh_account(self) -> None:
@@ -157,6 +180,24 @@ class MainWindow(QMainWindow):
             return
         runner().submit(self.ctx.hf.whoami, on_result=lambda info: self.nav.set_account(info.get("name")),
                         on_error=lambda _m: self.nav.set_account(None))
+
+    def _knowledge_changed(self) -> None:
+        """Keep the Workspace chat's collection picker in step with the Knowledge page."""
+        workspace = self.pages["workspace"]
+        playground = getattr(workspace, "_playground", None)
+        refresh = getattr(playground, "refresh_collections", None)
+        if callable(refresh):
+            refresh()
+        knowledge_tab = getattr(workspace, "knowledge_tab", None)
+        if hasattr(knowledge_tab, "refresh"):
+            knowledge_tab.refresh()
+
+    def _record_model_use(self, loaded: list[dict[str, Any]]) -> None:
+        """Remember when each model was last loaded (Storage Advisor, recent models)."""
+        for entry in loaded or []:
+            model_id = entry.get("model_id") if isinstance(entry, dict) else None
+            if model_id:
+                self.ctx.registry.touch_model(model_id)
 
     def _on_runtime_state(self, state: str) -> None:
         self.telemetry.set_runtime_state(state)
@@ -220,4 +261,11 @@ class MainWindow(QMainWindow):
         self.ctx.hardware.stop()
         self.ctx.runtime.stop()
         event.accept()
+        if getattr(self, "_relaunch", False):
+            from PySide6.QtCore import QProcess
+
+            from noelle.runtime.client import worker_command
+
+            command = worker_command()  # the frozen executable, or ``python -m noelle``
+            QProcess.startDetached(command[0], command[1:])
 

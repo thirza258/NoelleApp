@@ -13,6 +13,7 @@ from typing import Any
 
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
+from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.ui.widgets.common import Banner, EmptyState, button, label
 from noelle.runtime.client import build_worker_env
@@ -90,8 +91,8 @@ class NotebookPanel(QWidget):
         console = RichJupyterWidget()
         console.kernel_manager = manager
         console.kernel_client = client
-        console.set_default_style(colors="linux")
-        console.setStyleSheet("background: #0F131A;")
+        console.set_default_style(colors="linux" if theme.IS_DARK else "lightbg")
+        console.setStyleSheet(f"background: {theme.CODE_BG};")
         self.kernel_manager, self.kernel_client, self.console = manager, client, console
         self.body.addWidget(console, 1)
         self.start_btn.setEnabled(False)

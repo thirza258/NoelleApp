@@ -117,6 +117,9 @@ class ComponentInstallDialog(QDialog):
             self.status.setText("Installing…")
 
     def _done(self, info: dict[str, Any]) -> None:
+        from noelle.runtime import capabilities
+
+        capabilities.detect_backends_cached.cache_clear()  # the advisor should see the new tools right away
         self.spinner.stop()
         self.result_info = info
         self.status.setText(f"Installed llama.cpp {info.get('tag')}.")

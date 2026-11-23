@@ -216,6 +216,8 @@ class Compatibility:
     fp16_bytes: int | None = None
     int4_bytes: int | None = None
     recommended_precision: str | None = None
+    score: int | None = None  # 0-100 overall score from noelle.runtime.advisor, when computed
+    grade: str | None = None
 
 
 def assess_compatibility(param_count: int | None, budget: MemoryBudget, *, config: dict[str, Any] | None = None,

@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QFont, QGuiApplication, QSyn
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
 
 from noelle import paths
+from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.ui.widgets.common import button, label
 
@@ -23,9 +24,11 @@ class CodeHighlighter(QSyntaxHighlighter):
     def __init__(self, document: Any) -> None:
         super().__init__(document)
         self.rules: list[tuple[re.Pattern[str], QTextCharFormat]] = []
-        for pattern, color, bold in ((_KEYWORDS, "#C792EA", True), (r"\b\d+(\.\d+)?\b", "#F78C6C", False),
-                                     (r"(\"[^\"\n]*\"|'[^'\n]*')", "#C3E88D", False), (r"#[^\n]*", "#5F6B7A", False),
-                                     (r"\b[A-Za-z_][A-Za-z0-9_]*(?=\()", "#82AAFF", False)):
+        for pattern, color, bold in ((_KEYWORDS, theme.SYNTAX_KEYWORD, True),
+                                     (r"\b\d+(\.\d+)?\b", theme.SYNTAX_NUMBER, False),
+                                     (r"(\"[^\"\n]*\"|'[^'\n]*')", theme.SYNTAX_STRING, False),
+                                     (r"#[^\n]*", theme.SYNTAX_COMMENT, False),
+                                     (r"\b[A-Za-z_][A-Za-z0-9_]*(?=\()", theme.SYNTAX_FUNCTION, False)):
             fmt = QTextCharFormat()
             fmt.setForeground(QColor(color))
             if bold:

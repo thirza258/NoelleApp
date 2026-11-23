@@ -89,9 +89,14 @@ class ModelCard(Card):
             return
         self.badge.show()
         self.badge.set_level(compat.level)
-        self.badge.set_text(f"● {_BADGE_TEXT.get(compat.level, compat.label)}" if compat.level != "red"
-                            else f"● {compat.label}")
-        self.badge.setToolTip(compat.detail)
+        verdict = _BADGE_TEXT.get(compat.level, compat.label) if compat.level != "red" else compat.label
+        score = f"{compat.score} · " if compat.score is not None else ""
+        self.badge.set_text(f"● {score}{verdict}")
+        tip = compat.detail
+        if compat.score is not None:
+            tip = f"Compatibility {compat.score}/100 ({compat.grade}) on this machine. {tip} Open the model for the " \
+                  "full breakdown."
+        self.badge.setToolTip(tip)
 
 
 class ModelCardGrid(QWidget):

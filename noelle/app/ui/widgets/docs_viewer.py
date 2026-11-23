@@ -22,17 +22,19 @@ from PySide6.QtWidgets import QHBoxLayout, QTextBrowser, QVBoxLayout, QWidget
 from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.services.task_runner import runner
-from noelle.app.ui.widgets.chat_canvas import DOC_CSS
+from noelle.app.ui.widgets.chat_canvas import doc_css
 from noelle.app.ui.widgets.common import Pill, Spinner, button, label, open_external_url
 
 ALLOWED_HOSTS = ("huggingface.co", "cdn-uploads.huggingface.co", "cdn-avatars.huggingface.co",
                  "cas-bridge.xethub.hf.co")
 
-PAGE_CSS = f"""
+def page_css() -> str:
+    """Model-card page style, in the active palette."""
+    return f"""
 body {{ background: {theme.BG}; color: {theme.TEXT_2}; font: 14px -apple-system, "Segoe UI", sans-serif;
        line-height: 1.55; margin: 0 auto; padding: 8px 18px 40px; max-width: 920px; }}
 h1, h2, h3, h4 {{ color: {theme.TEXT}; }} a {{ color: {theme.ACCENT}; }}
-code, pre {{ font-family: Menlo, monospace; background: #0F131A; border-radius: 6px; }}
+code, pre {{ font-family: Menlo, monospace; background: {theme.CODE_BG}; color: {theme.CODE_TEXT}; border-radius: 6px; }}
 code {{ padding: 1px 5px; }} pre {{ padding: 12px; overflow-x: auto; }}
 table {{ border-collapse: collapse; }} th, td {{ border: 1px solid {theme.BORDER_STRONG}; padding: 5px 9px; }}
 img {{ max-width: 100%; }} blockquote {{ border-left: 3px solid {theme.BORDER_STRONG}; margin: 0; padding-left: 12px;
@@ -64,7 +66,7 @@ def markdown_to_html(markdown: str) -> str:
         doc = QTextDocument()
         doc.setMarkdown(markdown)
         body = doc.toHtml()
-    return f"<!doctype html><html><head><meta charset='utf-8'><style>{PAGE_CSS}</style></head><body>{body}</body></html>"
+    return f"<!doctype html><html><head><meta charset='utf-8'><style>{page_css()}</style></head><body>{body}</body></html>"
 
 
 def _webengine_usable() -> bool:
@@ -155,7 +157,7 @@ class DocsViewer(QWidget):
             self.text = QTextBrowser()
             self.text.setOpenLinks(False)
             self.text.anchorClicked.connect(open_external_url)
-            self.text.document().setDefaultStyleSheet(DOC_CSS)
+            self.text.document().setDefaultStyleSheet(doc_css())
             root.addWidget(self.text, 1)
 
     def set_model(self, summary: Any) -> None:

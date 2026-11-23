@@ -1,0 +1,11 @@
+{"_dataset": {"name": "reasoning-math", "title": "Arithmetic word problems", "category": "reasoning", "description": "Short multi-step arithmetic. Scored by comparing the last number in the answer."}}
+{"id": "m01", "prompt": "A shop sells pencils at 3 for $1. How many pencils can you buy with $7? Answer with just the number.", "expected": 21, "scorer": "numeric"}
+{"id": "m02", "prompt": "Tom has 12 apples. He gives 5 to Anna and then buys 8 more. How many apples does Tom have now? Answer with just the number.", "expected": 15, "scorer": "numeric"}
+{"id": "m03", "prompt": "What is 17 multiplied by 23? Answer with just the number.", "expected": 391, "scorer": "numeric"}
+{"id": "m04", "prompt": "A train travels at 60 km per hour for 2.5 hours. How many kilometres does it travel? Answer with just the number.", "expected": 150, "scorer": "numeric"}
+{"id": "m05", "prompt": "A rectangle is 8 cm long and 5 cm wide. What is its area in square centimetres? Answer with just the number.", "expected": 40, "scorer": "numeric"}
+{"id": "m06", "prompt": "What is 15% of 240? Answer with just the number.", "expected": 36, "scorer": "numeric"}
+{"id": "m07", "prompt": "Sara is twice as old as Ben. Ben is 9 years old. How old will Sara be in 4 years? Answer with just the number.", "expected": 22, "scorer": "numeric"}
+{"id": "m08", "prompt": "There are 4 boxes with 9 eggs in each box. 7 eggs break. How many unbroken eggs are left? Answer with just the number.", "expected": 29, "scorer": "numeric"}
+{"id": "m09", "prompt": "What is 1000 minus 357? Answer with just the number.", "expected": 643, "scorer": "numeric"}
+{"id": "m10", "prompt": "A pizza is cut into 8 slices. Three friends eat 2 slices each. How many slices are left? Answer with just the number.", "expected": 2, "scorer": "numeric"}

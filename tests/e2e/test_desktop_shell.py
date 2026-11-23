@@ -65,7 +65,9 @@ def test_navigation_and_grid_population(window: Any, qtbot: Any) -> None:
     page = window.pages["discover"]
     qtbot.waitUntil(lambda: len(page.grid.cards) >= 30, timeout=5000)
     assert page.hero.current() is not None
-    for key in ("workspace", "compare", "storage", "server", "discover"):
+    from noelle.app.ui.navigation_bar import PAGES
+
+    for key in [key for key, _text, _icon in PAGES] + ["discover"]:
         window.navigate(key)
         assert window.stack.currentWidget() is window.pages[key]
 

@@ -1,0 +1,9 @@
+{"_dataset": {"name": "translation-en-id", "title": "English → Indonesian translation", "category": "translation", "description": "Short phrases translated into Indonesian; scored by key words in the translation."}}
+{"id": "t01", "prompt": "Translate into Indonesian. Reply with the translation only: Good morning", "expected": ["selamat pagi"], "scorer": "contains"}
+{"id": "t02", "prompt": "Translate into Indonesian. Reply with the translation only: Thank you very much", "expected": ["terima kasih"], "scorer": "contains"}
+{"id": "t03", "prompt": "Translate into Indonesian. Reply with the translation only: Where is the train station?", "expected": ["stasiun"], "scorer": "contains"}
+{"id": "t04", "prompt": "Translate into Indonesian. Reply with the translation only: I am hungry", "expected": ["lapar"], "scorer": "contains"}
+{"id": "t05", "prompt": "Translate into Indonesian. Reply with the translation only: My name is Budi", "expected": ["nama saya budi"], "scorer": "contains"}
+{"id": "t06", "prompt": "Translate into Indonesian. Reply with the translation only: The book is on the table", "expected": ["buku", "meja"], "scorer": "contains_all"}
+{"id": "t07", "prompt": "Translate into Indonesian. Reply with the translation only: See you tomorrow", "expected": ["besok"], "scorer": "contains"}
+{"id": "t08", "prompt": "Translate into Indonesian. Reply with the translation only: How much does this cost?", "expected": ["berapa"], "scorer": "contains"}
