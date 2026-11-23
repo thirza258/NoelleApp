@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evaluation Lab — Noelle docs</title>
+  <meta name="description" content="Compare local models on built-in or custom datasets, keep a reproducible history and gate CI on accuracy and speed.">
+  <link rel="canonical" href="https://noelle.nevatal.id/docs/evaluation/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Evaluation Lab — Noelle docs">
+  <meta property="og:description" content="Compare local models on built-in or custom datasets, keep a reproducible history and gate CI on accuracy and speed.">
+  <meta property="og:url" content="https://noelle.nevatal.id/docs/evaluation/">
+  <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="../../assets/favicon.png">
+  <link rel="stylesheet" href="../../styles.css">
+  <script>(function () { var t = null; try { t = localStorage.getItem("noelle-theme"); } catch (e) {}
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); })();</script>
+  <script src="../../config.js"></script>
+  <script src="../../main.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.9 17a8 8 0 1 1 14.2 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1.2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    </defs></svg>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="../../" aria-label="Noelle home">
+        <img src="../../assets/noelle.png" alt="" width="30" height="30"><span>Noelle</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="../../#features">Features</a>
+        <a href="../../docs/" aria-current="page">Docs</a>
+        <a href="../../docs/quickstart/">Quick start</a>
+        <a href="../../docs/api/">API</a>
+        <a href="../../#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="icon show-light"><use href="#i-moon"/></svg><svg class="icon show-dark"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-primary btn-small" href="../../#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg><span>Download</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="container docs" id="top">
+    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/" aria-current="page">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></aside>
+    <article class="prose">
+      <h1>Evaluation Lab</h1>
+      <p class="page-lead">Compare local models on built-in or custom datasets, keep a reproducible history and gate CI on accuracy and speed.</p>
+<p>The Evaluation Lab answers <em>which model is best for my work?</em> with numbers from your own machine.</p>
+<h2 id="run-an-evaluation">Run an evaluation<a class="heading-anchor" href="#run-an-evaluation" aria-label="Link to this section">#</a></h2>
+<ol>
+<li>Open <strong>Evaluate</strong> and tick the models to compare (downloaded text models and local builds).</li>
+<li>Pick a dataset, or click the upload icon to import your own.</li>
+<li>Keep <strong>temperature 0</strong> for repeatable answers and click <strong>Run evaluation</strong>.</li>
+</ol>
+<p>Models run one after another on the GPU, each loaded once. If they don't all fit in memory, Noelle unloads each
+model before loading the next. The leaderboard fills in live; click a model to see every case with its output,
+score and timing.</p>
+<h2 id="built-in-datasets">Built-in datasets<a class="heading-anchor" href="#built-in-datasets" aria-label="Link to this section">#</a></h2>
+<table class="table">
+<thead>
+<tr>
+<th>Dataset</th>
+<th>Checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reasoning-math</code></td>
+<td>Short arithmetic word problems (numeric answer)</td>
+</tr>
+<tr>
+<td><code>json-output</code></td>
+<td>Valid JSON with the right keys, types and values</td>
+</tr>
+<tr>
+<td><code>instruction-following</code></td>
+<td>Format rules: one word, all caps, lists, number ranges</td>
+</tr>
+<tr>
+<td><code>sentiment</code></td>
+<td>Positive / negative / neutral classification</td>
+</tr>
+<tr>
+<td><code>coding-python</code></td>
+<td>Small Python functions, checked statically — generated code is never run</td>
+</tr>
+<tr>
+<td><code>indonesian-qa</code></td>
+<td>Indonesian general knowledge</td>
+</tr>
+<tr>
+<td><code>translation-en-id</code></td>
+<td>English → Indonesian translation</td>
+</tr>
+<tr>
+<td><code>chat-latency</code></td>
+<td>Everyday prompts, timing only</td>
+</tr>
+</tbody>
+</table>
+<h2 id="your-own-datasets">Your own datasets<a class="heading-anchor" href="#your-own-datasets" aria-label="Link to this section">#</a></h2>
+<p>A dataset is a JSONL file: an optional first line describing it, then one case per line.</p>
+<pre><code class="language-json">{&quot;_dataset&quot;: {&quot;name&quot;: &quot;support&quot;, &quot;title&quot;: &quot;Support tickets&quot;, &quot;description&quot;: &quot;Routing questions&quot;}}
+{&quot;id&quot;: &quot;t1&quot;, &quot;prompt&quot;: &quot;Customer: my card was charged twice. Which team? Answer billing, tech or sales.&quot;, &quot;expected&quot;: &quot;billing&quot;, &quot;scorer&quot;: &quot;choice&quot;, &quot;choices&quot;: [&quot;billing&quot;, &quot;tech&quot;, &quot;sales&quot;]}
+{&quot;id&quot;: &quot;t2&quot;, &quot;prompt&quot;: &quot;What is 12 x 8? Answer with just the number.&quot;, &quot;expected&quot;: 96, &quot;scorer&quot;: &quot;numeric&quot;}
+</code></pre>
+<table class="table">
+<thead>
+<tr>
+<th>Scorer</th>
+<th>Passes when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>exact</code></td>
+<td>The answer equals <code>expected</code> (case and punctuation ignored)</td>
+</tr>
+<tr>
+<td><code>contains</code> / <code>contains_all</code></td>
+<td>Any / all of the <code>expected</code> phrases appear</td>
+</tr>
+<tr>
+<td><code>regex</code></td>
+<td>Every pattern in <code>expected</code> matches and none in <code>forbid</code> does</td>
+</tr>
+<tr>
+<td><code>numeric</code></td>
+<td>The last number in the answer equals <code>expected</code> (optional <code>tolerance</code>)</td>
+</tr>
+<tr>
+<td><code>choice</code></td>
+<td>The first of the <code>choices</code> mentioned is <code>expected</code></td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>The answer is JSON and passes <code>required</code>, <code>types</code>, <code>equals</code>, <code>patterns</code>, <code>items</code> or <code>value</code> checks</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>Not scored — timing only</td>
+</tr>
+</tbody>
+</table>
+<p>Cases can also use <code>messages</code> instead of <code>prompt</code>, a <code>system</code> prompt, <code>tags</code> and their own <code>max_new_tokens</code>.</p>
+<h2 id="history-and-the-performance-matrix">History and the performance matrix<a class="heading-anchor" href="#history-and-the-performance-matrix" aria-label="Link to this section">#</a></h2>
+<p>Every run is saved as an <strong>experiment</strong> with the dataset fingerprint, generation settings, hardware and each
+model's exact revision. Open old runs from <strong>History</strong> and export them as JSON or Markdown. The
+<strong>Performance matrix</strong> combines all finished runs: median speed, time to first token, peak memory and accuracy per
+model, build and device. Runs from Compare appear in the history too.</p>
+<h2 id="compare">Compare<a class="heading-anchor" href="#compare" aria-label="Link to this section">#</a></h2>
+<p>For a quick look without a dataset, <strong>Compare</strong> runs one prompt on up to four models side by side and shows time to
+first token, tokens per second, peak memory and load time.</p>
+<h2 id="from-the-command-line-and-in-ci">From the command line and in CI<a class="heading-anchor" href="#from-the-command-line-and-in-ci" aria-label="Link to this section">#</a></h2>
+<pre><code class="language-bash">noelle eval --list-datasets
+noelle eval -m HuggingFaceTB/SmolLM2-360M-Instruct -d builtin:sentiment -d ./support.jsonl \
+    -t &quot;accuracy&gt;=0.7&quot; -t &quot;tok_s&gt;=20&quot; --json results.json --markdown report.md
+noelle eval --recipe nightly.yaml --baseline last-week.json --max-regression 0.1
+</code></pre>
+<p><code>noelle eval</code> exits with code <strong>1</strong> when a threshold or the baseline comparison fails, so it can gate a CI
+pipeline. A recipe bundles a whole run:</p>
+<pre><code class="language-yaml">name: nightly
+models: [HuggingFaceTB/SmolLM2-360M-Instruct, local/SmolLM2-360M-Instruct-mlx-4bit]
+datasets: [builtin:instruction-following, ./support.jsonl]
+params: {max_new_tokens: 256, temperature: 0}
+thresholds: [accuracy&gt;=0.7, tok_s&gt;=25]
+</code></pre>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/models/"><span>Previous</span><b>Models &amp; builds</b></a><a class="next" href="../../docs/knowledge/"><span>Next</span><b>Knowledge</b></a></nav>
+    </article>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="../../"><img src="../../assets/noelle.png" alt="" width="24" height="24"><span>Noelle</span></a>
+          <p>Your local AI model lab — find, run, evaluate and serve open models on your own computer.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="../../#features">Features</a></li><li><a href="../../#how">How it works</a></li><li><a href="../../#privacy">Privacy</a></li><li><a href="../../#developers">Developers</a></li><li><a href="../../#download">Download</a></li><li><a href="../../#faq">FAQ</a></li></ul></div>
+        <div><h4>Documentation</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> Noelle · MIT License</span>
+        <span><a href="../../#download" data-link="source">Source code</a> ·
+          <a href="../../sitemap.xml">sitemap.xml</a></span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

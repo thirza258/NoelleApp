@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noelle — your local AI model lab</title>
+  <meta name="description" content="Noelle is a free desktop app for macOS, Windows and Linux that finds open AI models that fit your computer, runs them locally, tests them on your own tasks and serves them to your apps. Nothing leaves your machine.">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E1E1E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://noelle.nevatal.id/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://noelle.nevatal.id/">
+  <meta property="og:title" content="Noelle — your local AI model lab">
+  <meta property="og:description" content="Find, run, evaluate and serve open AI models on your own computer. Free for macOS, Windows and Linux.">
+  <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/noelle.png">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved or system theme before first paint (no flash).
+    (function () {
+      var theme = null;
+      try { theme = localStorage.getItem("noelle-theme"); } catch (e) {}
+      if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <script src="config.js"></script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.9 17a8 8 0 1 1 14.2 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1.2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="#top" aria-label="Noelle home">
+        <img src="assets/noelle.png" alt="" width="30" height="30">
+        <span>Noelle</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="docs/">Docs</a>
+        <a href="#developers">Developers</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="icon show-light"><use href="#i-moon"/></svg>
+          <svg class="icon show-dark"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-primary btn-small" href="#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg><span>Download</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ───────────────────────────── hero ───────────────────────────── -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Free &amp; open source · macOS · Windows · Linux</p>
+          <h1>Your local <span class="accent">AI model lab</span>.</h1>
+          <p class="lead">Tell Noelle what you want to build. It finds open models on Hugging Face that fit your
+            computer, sets them up, tests them on your own tasks and serves them to your apps — all on your machine.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary btn-large" href="#download" data-link="download">
+              <svg class="icon"><use href="#i-download"/></svg>Download for free
+            </a>
+            <a class="btn btn-ghost btn-large" href="#features">See what it does</a>
+          </div>
+          <p class="fine">No account. No cloud. Your prompts and documents never leave your computer.</p>
+        </div>
+        <figure class="window hero-shot">
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img class="shot" src="assets/screens/mission-light.png" data-light="assets/screens/mission-light.png"
+               data-dark="assets/screens/mission-dark.png" width="1440" height="900"
+               alt="Noelle's Mission page planning an Indonesian document Q&amp;A assistant for an RTX 3060: Qwen2.5-7B-Instruct in 4-bit plus the BGE-M3 embedding model.">
+        </figure>
+      </div>
+      <ul class="stack container" aria-label="Works with">
+        <li>Hugging Face Hub</li><li>Transformers</li><li>MLX</li><li>llama.cpp</li><li>Diffusers</li>
+        <li>Sentence Transformers</li><li>OpenAI-compatible API</li><li>Model Context Protocol</li>
+      </ul>
+    </section>
+
+    <!-- ─────────────────────────── features ─────────────────────────── -->
+    <section id="features" class="section">
+      <div class="container">
+        <header class="section-head">
+          <p class="eyebrow">Everything in one app</p>
+          <h2>From “which model?” to “it’s running in my app”.</h2>
+          <p class="lead">Noelle covers the whole life of a local model: discover, check, install, run, compare,
+            evaluate, optimise and serve.</p>
+        </header>
+        <div class="feature-grid">
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-sparkles"/></svg>
+            <h3>Mission mode</h3>
+            <p>Describe your goal — “an Indonesian legal assistant for my PDFs”. Noelle proposes a stack that fits
+              your hardware and sets it up step by step, asking before every download.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-gauge"/></svg>
+            <h3>Will it run here?</h3>
+            <p>Every model gets a 0–100 score for <em>your</em> machine, with the reasons: memory, runtime,
+              precision, context length and trust.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-layers"/></svg>
+            <h3>The right build, chosen for you</h3>
+            <p>FP16, 8-bit, 4-bit MLX, NF4, AWQ, GPTQ or GGUF — Noelle shows memory, quality and speed for each and
+              recommends one. One click builds 4-bit versions locally.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-activity"/></svg>
+            <h3>Evaluation Lab</h3>
+            <p>Test several models on built-in or your own datasets — reasoning, JSON, coding, Indonesian Q&amp;A,
+              translation. Every run is saved with the exact model revision and hardware.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-book"/></svg>
+            <h3>Knowledge</h3>
+            <p>Turn PDFs, Word files, Markdown and code into a searchable knowledge base and chat with it — with
+              citations. Measure retrieval quality and compare chunk sizes or embedding models.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-play"/></svg>
+            <h3>Playgrounds for every kind of model</h3>
+            <p>Chat, vision Q&amp;A, object detection, speech-to-text from your microphone, text-to-speech, image
+              generation with live previews, and embeddings.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-columns"/></svg>
+            <h3>Compare side by side</h3>
+            <p>One prompt, up to four models. See the answers next to time-to-first-token, tokens per second and
+              peak memory — even when the models don’t all fit in memory at once.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-plug"/></svg>
+            <h3>Your models, in your apps</h3>
+            <p>A local OpenAI-compatible API with aliases and automatic model routing, plus an MCP server so coding
+              agents like Claude Code and Cursor can use your local models.</p>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-database"/></svg>
+            <h3>Storage that tidies itself</h3>
+            <p>See which models you haven’t used for months, half-finished downloads and old revisions — and
+              reclaim gigabytes in a click.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── showcase ─────────────────────────── -->
+    <section id="how" class="section section-alt">
+      <div class="container">
+        <header class="section-head">
+          <p class="eyebrow">How it works</p>
+          <h2>Pick with confidence. Prove it with data.</h2>
+        </header>
+
+        <div class="showcase">
+          <div class="showcase-copy">
+            <h3>Know before you download</h3>
+            <p>Browse the Hugging Face catalog by text, vision, audio, image generation or embeddings. Each model
+              shows how well it runs on your computer before you spend gigabytes downloading it.</p>
+            <ul class="checks">
+              <li><svg class="icon"><use href="#i-check"/></svg><span><b>Green</b> runs natively, <b>yellow</b> needs a 4-bit build, <b>red</b> won’t fit</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Resumable downloads, verified by checksum</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Works with Apple Silicon, NVIDIA GPUs and plain CPUs</span></li>
+            </ul>
+          </div>
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img class="shot" loading="lazy" src="assets/screens/discover-light.png"
+                 data-light="assets/screens/discover-light.png" data-dark="assets/screens/discover-dark.png"
+                 width="1440" height="900" alt="The Discover page: popular text models, each with a compatibility score badge for this computer.">
+          </figure>
+        </div>
+
+        <div class="showcase reverse">
+          <div class="showcase-copy">
+            <h3>See exactly how to run it</h3>
+            <p>The Analysis tab explains the score and lists every way to run the model — what fits, what needs a
+              one-time build, and how fast it should be. Pick a profile (Balanced, Quality, Fast, Low memory, Max
+              context) and Noelle selects the build for you.</p>
+            <ul class="checks">
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Speed measured on your machine once you’ve run it</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Largest context that fits in your memory</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Models that run their own Python code are flagged — allow once, or trust a repo or publisher</span></li>
+            </ul>
+          </div>
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img class="shot" loading="lazy" src="assets/screens/analysis-light.png"
+                 data-light="assets/screens/analysis-light.png" data-dark="assets/screens/analysis-dark.png"
+                 width="1440" height="900" alt="The Analysis tab for Qwen2.5-7B-Instruct: score breakdown and a table of run options with memory, quality and speed.">
+          </figure>
+        </div>
+
+        <div class="showcase">
+          <div class="showcase-copy">
+            <h3>Find the best model for <em>your</em> work</h3>
+            <p>Benchmarks on the internet don’t know your tasks. The Evaluation Lab runs datasets against several
+              local models and scores every answer on your machine — accuracy, time to first token, tokens per
+              second and memory.</p>
+            <ul class="checks">
+              <li><svg class="icon"><use href="#i-check"/></svg><span>8 built-in datasets, or bring your own JSONL file</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>History with model revision, settings and hardware for every run</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span>Run it in CI with <code>noelle eval</code> and fail the build on a regression</span></li>
+            </ul>
+          </div>
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img class="shot" loading="lazy" src="assets/screens/evaluate-light.png"
+                 data-light="assets/screens/evaluate-light.png" data-dark="assets/screens/evaluate-dark.png"
+                 width="1440" height="900" alt="The Evaluation Lab comparing two models on a sentiment dataset, with accuracy, speed and per-case results.">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── hardware ─────────────────────────── -->
+    <section class="section">
+      <div class="container">
+        <header class="section-head">
+          <p class="eyebrow">Made for the computer you have</p>
+          <h2>Fast on Apple Silicon. Fast on NVIDIA. Fine on a CPU.</h2>
+        </header>
+        <div class="hw-grid">
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-laptop"/></svg>
+            <h3>Apple Silicon</h3>
+            <ul class="plain">
+              <li>Metal acceleration through PyTorch MPS</li>
+              <li>4-bit MLX builds — the fastest way to run LLMs on a Mac</li>
+              <li>GGUF models with llama.cpp on Metal</li>
+            </ul>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-monitor"/></svg>
+            <h3>NVIDIA GPUs</h3>
+            <ul class="plain">
+              <li>CUDA with FP16 / BF16</li>
+              <li>8-bit and 4-bit NF4 with bitsandbytes</li>
+              <li>AWQ and GPTQ 4-bit builds</li>
+            </ul>
+          </article>
+          <article class="card">
+            <svg class="feature-icon"><use href="#i-cpu"/></svg>
+            <h3>Any CPU</h3>
+            <ul class="plain">
+              <li>GGUF quantized models with llama.cpp</li>
+              <li>Small models run comfortably without a GPU</li>
+              <li>Noelle tells you up front what will be slow</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── privacy ──────────────────────────── -->
+    <section id="privacy" class="section section-alt">
+      <div class="container privacy">
+        <div>
+          <p class="eyebrow">Private by design</p>
+          <h2>Your data stays on your computer.</h2>
+          <p class="lead">Noelle talks to the internet only to browse and download models. Everything you type,
+            every document you index and every answer is processed locally.</p>
+        </div>
+        <ul class="checks big">
+          <li><svg class="icon"><use href="#i-shield"/></svg><span>Models run in a separate process that works offline and never sees your Hugging Face token</span></li>
+          <li><svg class="icon"><use href="#i-shield"/></svg><span>Your token is kept in the system keychain, never in a file</span></li>
+          <li><svg class="icon"><use href="#i-shield"/></svg><span>The local API listens only on this computer and rejects requests from websites</span></li>
+          <li><svg class="icon"><use href="#i-shield"/></svg><span>Optional downloads, like the llama.cpp tools, always ask first</span></li>
+          <li><svg class="icon"><use href="#i-shield"/></svg><span>No telemetry, no account</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ────────────────────────── developers ────────────────────────── -->
+    <section id="developers" class="section">
+      <div class="container">
+        <header class="section-head">
+          <p class="eyebrow">For developers</p>
+          <h2>A local AI gateway for everything you build.</h2>
+          <p class="lead">Point any OpenAI client at Noelle, give coding agents your local models over MCP, and keep
+            model quality in check from CI.</p>
+        </header>
+        <div class="code-grid">
+          <article class="code-card">
+            <div class="code-head"><span>OpenAI-compatible API</span>
+              <button class="copy" type="button" data-copy="code-api" aria-label="Copy the Python example"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+<pre id="code-api"><code>from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8765/v1",
+                api_key="not-needed")
+reply = client.chat.completions.create(
+    model="auto",  # or an alias such as noelle-code
+    messages=[{"role": "user", "content": "Hi!"}])
+print(reply.choices[0].message.content)</code></pre>
+          </article>
+          <article class="code-card">
+            <div class="code-head"><span>MCP for coding agents</span>
+              <button class="copy" type="button" data-copy="code-mcp" aria-label="Copy the MCP command"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+<pre id="code-mcp"><code># Claude Code
+claude mcp add noelle -- noelle mcp
+
+# tools: hardware_info, list_local_models,
+# search_models, inspect_model, chat, embed,
+# list_knowledge_bases, query_knowledge_base</code></pre>
+          </article>
+          <article class="code-card">
+            <div class="code-head"><span>Evaluation in CI</span>
+              <button class="copy" type="button" data-copy="code-ci" aria-label="Copy the evaluation command"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+<pre id="code-ci"><code>noelle eval \
+  -m HuggingFaceTB/SmolLM2-360M-Instruct \
+  -d builtin:instruction-following \
+  -t "accuracy&gt;=0.7" -t "tok_s&gt;=20" \
+  --baseline last-week.json
+# exit code 1 when a check fails</code></pre>
+          </article>
+        </div>
+        <ul class="endpoints">
+          <li><code>/v1/chat/completions</code></li><li><code>/v1/embeddings</code></li>
+          <li><code>/v1/audio/transcriptions</code></li><li><code>/v1/images/generations</code></li>
+          <li><code>/v1/models</code></li><li><code>/v1/knowledge</code></li>
+        </ul>
+        <p class="fine" style="margin-top:18px">Full reference: <a href="docs/api/">Local API</a> ·
+          <a href="docs/mcp/">MCP server</a> · <a href="docs/cli/">Command line</a> ·
+          <a href="docs/evaluation/">Evaluation Lab</a></p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── download ─────────────────────────── -->
+    <section id="download" class="section download">
+      <div class="container download-box">
+        <img src="assets/noelle.png" alt="" width="72" height="72">
+        <h2>Download Noelle</h2>
+        <p class="lead">Free and open source (MIT). Installers with a step-by-step setup assistant.</p>
+        <a class="btn btn-primary btn-large" href="#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg>Download for free
+        </a>
+        <p class="fine"><a href="#download" data-link="files">All installers and older versions</a></p>
+        <div class="platforms">
+          <div class="platform">
+            <svg class="feature-icon"><use href="#i-laptop"/></svg>
+            <h3>macOS</h3>
+            <p>Apple Silicon · macOS 13 or newer</p>
+            <code>.pkg</code> <code>.dmg</code>
+          </div>
+          <div class="platform">
+            <svg class="feature-icon"><use href="#i-monitor"/></svg>
+            <h3>Windows</h3>
+            <p>Windows 10 or 11 · 64-bit</p>
+            <code>-setup.exe</code>
+          </div>
+          <div class="platform">
+            <svg class="feature-icon"><use href="#i-terminal"/></svg>
+            <h3>Linux</h3>
+            <p>Ubuntu / Debian · 64-bit</p>
+            <code>.deb</code> <code>.tar.gz</code>
+          </div>
+        </div>
+        <p class="fine">8 GB of memory is enough for small models; 16 GB runs 7-billion-parameter models in 4-bit.
+          A GPU is optional.</p>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── FAQ ────────────────────────────── -->
+    <section id="faq" class="section section-alt">
+      <div class="container faq">
+        <h2>Questions</h2>
+        <p class="lead">More answers in the <a href="docs/">documentation</a> and
+          <a href="docs/troubleshooting/">troubleshooting guide</a>.</p>
+        <details>
+          <summary>Is Noelle really free?</summary>
+          <p>Yes. Noelle is open source under the MIT license. The models you download keep their own licenses,
+            which Noelle shows on every model page.</p>
+        </details>
+        <details>
+          <summary>Do I need an internet connection?</summary>
+          <p>Only to browse Hugging Face and download models. Once a model is on your computer, chatting,
+            indexing documents, evaluating and serving all work offline.</p>
+        </details>
+        <details>
+          <summary>Which models can I run?</summary>
+          <p>Open models from the Hugging Face Hub: chat and coding LLMs, vision-language models, speech
+            recognition and synthesis, image generation and embedding models — in Transformers, MLX, GGUF and
+            pre-quantized formats. Noelle checks each one against your hardware before you download it.</p>
+        </details>
+        <details>
+          <summary>What hardware do I need?</summary>
+          <p>Any recent Mac with Apple Silicon, or a Windows or Linux PC. A GPU makes big models faster but isn’t
+            required: Noelle recommends 4-bit builds when memory is tight and tells you when something will only
+            run slowly on the CPU.</p>
+        </details>
+        <details>
+          <summary>Do I need a Hugging Face account?</summary>
+          <p>No. A free Hugging Face token is only needed for gated models (for example some Llama releases). The
+            installer and the setup assistant let you add one; it is stored in your system keychain.</p>
+        </details>
+        <details>
+          <summary>Can other apps use my local models?</summary>
+          <p>Yes — start the local API server in Noelle and use any OpenAI-compatible client, or connect coding
+            agents through the built-in MCP server. Both run only on your computer.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <!-- sitemap:start -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="./"><img src="assets/noelle.png" alt="" width="24" height="24"><span>Noelle</span></a>
+          <p>Your local AI model lab — find, run, evaluate and serve open models on your own computer.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="./#features">Features</a></li><li><a href="./#how">How it works</a></li><li><a href="./#privacy">Privacy</a></li><li><a href="./#developers">Developers</a></li><li><a href="./#download">Download</a></li><li><a href="./#faq">FAQ</a></li></ul></div>
+        <div><h4>Documentation</h4><ul><li><a href="docs/">Overview</a></li><li><a href="docs/install/">Install</a></li><li><a href="docs/quickstart/">Quick start</a></li><li><a href="docs/mission/">Mission mode</a></li><li><a href="docs/models/">Models &amp; builds</a></li><li><a href="docs/evaluation/">Evaluation Lab</a></li><li><a href="docs/knowledge/">Knowledge</a></li><li><a href="docs/storage/">Storage</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="docs/api/">Local API</a></li><li><a href="docs/mcp/">MCP server</a></li><li><a href="docs/cli/">Command line</a></li><li><a href="docs/privacy/">Privacy &amp; security</a></li><li><a href="docs/troubleshooting/">Troubleshooting</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> Noelle · MIT License</span>
+        <span><a href="./#download" data-link="source">Source code</a> ·
+          <a href="sitemap.xml">sitemap.xml</a></span>
+      </div>
+    </div>
+  </footer>
+  <!-- sitemap:end -->
+</body>
+</html>
