@@ -53,7 +53,7 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Sequence, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence, TypeVar
 
 import anyio
 import uvicorn
@@ -285,6 +285,12 @@ class _EventStreamResponse(StreamingResponse):
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
+    # Browsers may send "simple" cross-site POSTs (text/plain, forms) without a CORS preflight;
+    # insisting on JSON forces the preflight, which this server never approves.
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/json" and not content_type.endswith("+json"):
+        raise ApiError(415, "Send the request body as JSON with 'Content-Type: application/json'.",
+                       code="unsupported_media_type")
     raw = await request.body()
     try:
         data = json.loads(raw or b"null")
@@ -541,6 +547,45 @@ async def _chat_events(call: WorkerCall, first: dict[str, Any], meta: _ChatMeta)
 # ---------------------------------------------------------------------------
 # access log
 # ---------------------------------------------------------------------------
+
+
+LOOPBACK_HOST_HEADERS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
+
+def host_name(value: str) -> str:
+    """The host part of a ``Host`` header: ``127.0.0.1:8765`` -> ``127.0.0.1``, ``[::1]:8765`` -> ``[::1]``."""
+    value = value.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[:end + 1] if end != -1 else value
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+class HostGuardMiddleware:
+    """Answer only requests addressed to a loopback name.
+
+    A web page can point its own domain at 127.0.0.1 (DNS rebinding) and then read this API as if it were
+    same-origin — including /v1/knowledge, i.e. the user's indexed documents. Such requests still carry the
+    attacker's hostname in ``Host``, so rejecting every non-loopback ``Host`` closes that door.
+    """
+
+    def __init__(self, app: Any, allowed_hosts: Iterable[str] = LOOPBACK_HOST_HEADERS) -> None:
+        self.app = app
+        self.allowed = frozenset(h.lower() for h in allowed_hosts)
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") in ("http", "websocket"):
+            raw = next((v for k, v in scope.get("headers") or [] if k == b"host"), b"")
+            if host_name(raw.decode("latin-1")) not in self.allowed:
+                if scope.get("type") == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                    return
+                response = JSONResponse(ApiError(421, "Invalid Host header: Noelle's API only answers requests "
+                                                      "addressed to 127.0.0.1, localhost or [::1].",
+                                                 code="invalid_host").body(), status_code=421)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class AccessLogMiddleware:
@@ -881,6 +926,7 @@ def create_app(worker_endpoint: str | None, token: str | None, *, registry: Mode
     state = _ServerState(worker_endpoint, token, registry, api_key, settings)
     app = FastAPI(title="Noelle API", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.noelle = state
+    app.add_middleware(HostGuardMiddleware)  # inner: rejected requests still reach the access log
     app.add_middleware(AccessLogMiddleware, log_path=paths.logs_dir() / "server-access.log")
 
     @app.exception_handler(ApiError)
