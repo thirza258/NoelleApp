@@ -64,7 +64,7 @@ def window(qtbot: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
 def test_navigation_and_grid_population(window: Any, qtbot: Any) -> None:
     page = window.pages["discover"]
     qtbot.waitUntil(lambda: len(page.grid.cards) >= 30, timeout=5000)
-    assert page.hero.current() is not None
+    qtbot.waitUntil(lambda: page.hero.current() is not None, timeout=5000)  # loads on its own task
     from noelle.app.ui.navigation_bar import PAGES
 
     for key in [key for key, _text, _icon in PAGES] + ["discover"]:
