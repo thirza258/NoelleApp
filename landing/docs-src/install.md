@@ -9,7 +9,7 @@ slug: install
 
 Noelle ships as a regular installer for each platform. Get the latest version from the
 [download page](download:) — it picks the right file for your system — or browse
-[all installers and older versions](files:).
+[all installers and older versions](files:) on the [SourceForge project page](https://sourceforge.net/projects/noelleapp/).
 
 ## System requirements
 

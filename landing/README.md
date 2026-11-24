@@ -22,8 +22,8 @@ Open `config.js` and replace `YOUR-PROJECT` with your SourceForge project name:
 
 ```js
 window.NOELLE_LINKS = {
-  download: "https://sourceforge.net/projects/noelle/files/latest/download",
-  files: "https://sourceforge.net/projects/noelle/files/",
+  download: "https://sourceforge.net/projects/noelleapp/files/latest/download",
+  files: "https://sourceforge.net/projects/noelleapp/files/",
   source: "https://github.com/thirza258/NoelleApp",
 };
 ```

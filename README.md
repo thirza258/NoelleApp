@@ -58,8 +58,8 @@ Inference worker  (`noelle worker`, separate process)
 | Windows 10/11 | `Noelle-1.0.0-windows-x64-setup.exe` | Step-by-step wizard. It includes an optional page for your Hugging Face token. |
 | Linux (Debian/Ubuntu) | `noelle_1.0.0_amd64.deb` | `sudo apt install ./noelle_1.0.0_amd64.deb`, then open *Noelle AI Studio* from the app menu. |
 
-Download the installers from the repository's Releases page, or from the artifacts of the `release` workflow
-(`gh workflow run release.yml`, then `gh run download`). On first launch the **Setup Assistant** walks you through:
+Download the installers from the repository's Releases page, or from [SourceForge](https://sourceforge.net/projects/noelleapp/)
+(or from the artifacts of the `release` workflow with `gh workflow run release.yml`, then `gh run download`). On first launch the **Setup Assistant** walks you through:
 
 1. Hugging Face token (optional). It is stored in the OS credential vault.
 2. A hardware check: what your GPU and memory can run.

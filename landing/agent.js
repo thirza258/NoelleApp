@@ -116,8 +116,9 @@
     getDownloadInfo: function () {
       var links = window.NOELLE_LINKS || {};
       return {
-        downloadUrl: links.download || 'https://sourceforge.net/projects/YOUR-PROJECT/files/latest/download',
-        allFilesUrl: links.files || 'https://sourceforge.net/projects/YOUR-PROJECT/files/',
+        projectUrl: links.project || 'https://sourceforge.net/projects/noelleapp/',
+        downloadUrl: links.download || 'https://sourceforge.net/projects/noelleapp/files/latest/download',
+        allFilesUrl: links.files || 'https://sourceforge.net/projects/noelleapp/files/',
         sourceUrl: links.source || 'https://github.com/thirza258/NoelleApp',
         platforms: {
           macos: 'Universal (Apple Silicon M1/M2/M3/M4 & Intel DMG)',

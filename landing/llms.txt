@@ -10,6 +10,9 @@
 - **Supported Model Formats**: GGUF (llama.cpp), MLX (Apple Silicon native), EXL2, Hugging Face Transformers
 - **Local API**: http://127.0.0.1:8765/v1 (OpenAI-compatible)
 - **Agent Integration**: Model Context Protocol (MCP) via `noelle mcp`
+- **Download Page**: https://sourceforge.net/projects/noelleapp/
+- **Direct Download**: https://sourceforge.net/projects/noelleapp/files/latest/download
+- **All Installers**: https://sourceforge.net/projects/noelleapp/files/
 - **Source Code**: https://github.com/thirza258/NoelleApp
 
 ## Key Features & Capabilities
