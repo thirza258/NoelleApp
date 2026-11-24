@@ -40,9 +40,9 @@ jobs:
       - name: Inno Setup (Windows)
         if: runner.os == 'Windows'
         run: choco install innosetup --no-progress -y
-      - name: CPU PyTorch (Linux/Windows keeps installers a sensible size)
+      - name: CUDA PyTorch (Linux/Windows - CUDA 12.4 LTS)
         if: runner.os != 'macOS'
-        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
       - name: Install Noelle
         run: python -m pip install -e ".[all,dev]"
       - name: Import macOS signing certificate
