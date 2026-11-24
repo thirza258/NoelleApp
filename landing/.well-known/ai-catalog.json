@@ -1,0 +1,41 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Noelle",
+    "identifier": "did:web:noelle.nevatal.id"
+  },
+  "entries": [
+    {
+      "identifier": "urn:air:noelle.nevatal.id:docs:site",
+      "displayName": "Noelle Documentation & Architecture",
+      "type": "text/markdown",
+      "url": "https://noelle.nevatal.id/llms.txt",
+      "representativeQueries": [
+        "what does Noelle do",
+        "how to run local models with Noelle",
+        "Noelle hardware requirements"
+      ]
+    },
+    {
+      "identifier": "urn:air:noelle.nevatal.id:server:mcp",
+      "displayName": "Noelle MCP Server Specification",
+      "type": "application/mcp-server-card+json",
+      "url": "https://noelle.nevatal.id/.well-known/mcp/server-card.json",
+      "representativeQueries": [
+        "connect Claude to Noelle",
+        "Noelle MCP server configuration",
+        "use local models in Cursor"
+      ]
+    },
+    {
+      "identifier": "urn:air:noelle.nevatal.id:api:local",
+      "displayName": "Noelle Local API Reference",
+      "type": "text/html",
+      "url": "https://noelle.nevatal.id/docs/api/",
+      "representativeQueries": [
+        "Noelle OpenAI compatible endpoints",
+        "how to query Noelle knowledge base API"
+      ]
+    }
+  ]
+}

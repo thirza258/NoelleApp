@@ -1,0 +1,94 @@
+# Noelle — Your Local AI Model Lab
+
+> Noelle is a free, privacy-first desktop application for macOS, Windows, and Linux that discovers open AI models that fit your computer, runs them entirely on-device, benchmarks them on your real tasks, and serves them to your coding agents and applications. Nothing leaves your machine.
+
+## Quick Summary
+- **App Name**: Noelle
+- **Website**: https://noelle.nevatal.id/
+- **License**: MIT License
+- **Platforms**: macOS (Apple Silicon / Intel), Windows (CUDA / DirectML / CPU), Linux (CUDA / ROCm / CPU)
+- **Supported Model Formats**: GGUF (llama.cpp), MLX (Apple Silicon native), EXL2, Hugging Face Transformers
+- **Local API**: http://127.0.0.1:8765/v1 (OpenAI-compatible)
+- **Agent Integration**: Model Context Protocol (MCP) via `noelle mcp`
+- **Source Code**: https://github.com/thirza258/NoelleApp
+
+## Key Features & Capabilities
+
+### 1. Hardware & VRAM Compatibility Advisor
+- Queries system accelerator, usable unified memory / VRAM, memory bandwidth, and compute capabilities.
+- Calculates exact memory footprint for model weights, KV cache, and context overhead.
+- Provides tiered fit recommendations:
+  - *Full Fit*: Model fits completely in VRAM with large context (fastest).
+  - *Partial Fit*: CPU/GPU split with partial offloading.
+  - *System RAM*: Runs on system memory via CPU inference.
+- Recommends optimal quantization levels (e.g. Q4_K_M, Q5_K_M, Q8_0, BF16).
+
+### 2. Multi-Engine Local Runtime
+- Automatically routes models to the optimal execution backend:
+  - **llama.cpp / GGUF**: High-speed quantized inference across all architectures.
+  - **MLX**: Native Metal unified memory acceleration on macOS Apple Silicon.
+  - **EXL2 / vLLM / Transformers**: GPU-accelerated inference for Nvidia hardware.
+
+### 3. Evaluation Lab & Side-by-Side Arena
+- Compare multiple models side-by-side on the same prompt.
+- Live measurement of:
+  - Time to first token (TTFT)
+  - Generation speed (tokens per second)
+  - Peak memory / VRAM usage
+  - Answer quality and instruction-following fidelity.
+
+### 4. Knowledge Canvas (Local RAG)
+- Turn folders, PDF documents, Markdown files, or web pages into searchable local knowledge collections.
+- Full vector embedding generation and cosine similarity search directly on your machine.
+- Zero data leaves your computer.
+
+### 5. Local OpenAI-Compatible API (http://127.0.0.1:8765/v1)
+- Drop-in replacement for OpenAI endpoints in Cursor, Continue, LangChain, or custom scripts:
+  - `GET /v1/models`: List downloaded models and custom aliases.
+  - `POST /v1/chat/completions`: Chat completions with streaming (Server-Sent Events).
+  - `POST /v1/embeddings`: Vector embeddings from local embedding models.
+  - `POST /v1/audio/transcriptions`: Local speech-to-text audio transcription.
+  - `POST /v1/images/generations`: Text-to-image generation returned as base64.
+  - `GET /v1/knowledge`: List local knowledge collections.
+  - `POST /v1/knowledge/query`: Query indexed documents with top_k retrieval.
+  - `GET /health`: Health and accelerator status.
+- Supports model aliasing (`noelle-chat`, `noelle-code`, `noelle-embed`, `noelle-image`) and automatic routing (`"model": "auto"`).
+
+### 6. Model Context Protocol (MCP) Server
+- Let Claude Code, Cursor, Claude Desktop, and autonomous agents use local models and knowledge bases.
+- Setup command:
+  ```bash
+  claude mcp add noelle -- noelle mcp
+  ```
+- Tools provided:
+  - `hardware_info`: Local hardware, accelerator, VRAM, and installed inference engines.
+  - `list_local_models`: Downloaded and ready-to-run models.
+  - `search_models`: Hugging Face search with machine fit scores.
+  - `inspect_model`: Full model analysis, quantization advice, context limits.
+  - `chat`: Local model chat completion with auto-routing.
+  - `embed`: Generate local vector embeddings.
+  - `list_knowledge_bases`: List local document collections.
+  - `query_knowledge_base`: Semantic vector query over local documents.
+
+## Discovery & Agent Endpoints
+- Agent Card: https://noelle.nevatal.id/.well-known/agent-card.json
+- AI Catalog: https://noelle.nevatal.id/.well-known/ai-catalog.json
+- API Catalog Linkset: https://noelle.nevatal.id/.well-known/api-catalog
+- MCP Server Card: https://noelle.nevatal.id/.well-known/mcp/server-card.json
+- Authentication Guide: https://noelle.nevatal.id/auth.md
+- Full Sitemap: https://noelle.nevatal.id/sitemap.xml
+
+## Documentation Hierarchy
+- Getting Started: https://noelle.nevatal.id/docs/
+- Installation: https://noelle.nevatal.id/docs/install/
+- Quickstart: https://noelle.nevatal.id/docs/quickstart/
+- Discovering Models: https://noelle.nevatal.id/docs/models/
+- Evaluation Lab: https://noelle.nevatal.id/docs/evaluation/
+- Knowledge Canvas (RAG): https://noelle.nevatal.id/docs/knowledge/
+- Local API Reference: https://noelle.nevatal.id/docs/api/
+- MCP Server Reference: https://noelle.nevatal.id/docs/mcp/
+- CLI Reference: https://noelle.nevatal.id/docs/cli/
+- Storage & Cache: https://noelle.nevatal.id/docs/storage/
+- Troubleshooting: https://noelle.nevatal.id/docs/troubleshooting/
+- Privacy Policy: https://noelle.nevatal.id/docs/privacy/
+- Terms of Service: https://noelle.nevatal.id/docs/terms/

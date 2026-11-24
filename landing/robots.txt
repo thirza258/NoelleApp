@@ -1,4 +1,6 @@
 User-agent: *
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Allow: /
 
 Sitemap: https://noelle.nevatal.id/sitemap.xml
+Agentmap: https://noelle.nevatal.id/.well-known/ai-catalog.json

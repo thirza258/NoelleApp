@@ -1,0 +1,46 @@
+{
+  "protocol_version": "0.1",
+  "organization": {
+    "name": "Nevatal",
+    "domain": "noelle.nevatal.id"
+  },
+  "auth": {
+    "issuer": "https://noelle.nevatal.id",
+    "direct": {
+      "scopes": [
+        "poppy:read",
+        "poppy:write"
+      ]
+    },
+    "device": {
+      "scopes": [
+        "poppy:read",
+        "poppy:write"
+      ]
+    }
+  },
+  "agent": {
+    "protocols": [
+      {
+        "type": "poppy",
+        "endpoint": "https://noelle.nevatal.id/api/"
+      }
+    ]
+  },
+  "apis": [
+    {
+      "type": "openapi",
+      "url": "https://noelle.nevatal.id/docs/api/",
+      "description": "Noelle Local API Documentation"
+    },
+    {
+      "type": "mcp",
+      "url": "https://noelle.nevatal.id/.well-known/mcp/server-card.json",
+      "description": "Noelle MCP server card"
+    }
+  ],
+  "web": {
+    "browser_session_endpoint": "https://noelle.nevatal.id/"
+  },
+  "extensions": {}
+}

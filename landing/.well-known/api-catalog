@@ -1,0 +1,29 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://noelle.nevatal.id/",
+      "service-desc": [
+        {
+          "href": "https://noelle.nevatal.id/sitemap.xml",
+          "type": "application/xml"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://noelle.nevatal.id/auth.md",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://noelle.nevatal.id/llms.txt",
+          "type": "text/markdown"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://noelle.nevatal.id/docs/api/",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}

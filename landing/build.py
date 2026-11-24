@@ -135,6 +135,8 @@ def head(title: str, description: str, url: str, prefix: str, root_links: bool =
   <title>{html.escape(title)}</title>
   <meta name="description" content="{html.escape(description)}">
   <link rel="canonical" href="{url}">
+  <link rel="describedby" type="text/markdown" href="{asset}auth.md">
+  <link rel="alternate" type="text/markdown" href="{asset}llms.txt" title="LLM Overview">
   <meta property="og:type" content="article">
   <meta property="og:title" content="{html.escape(title)}">
   <meta property="og:description" content="{html.escape(description)}">
@@ -148,6 +150,7 @@ def head(title: str, description: str, url: str, prefix: str, root_links: bool =
   <script>(function () {{ var t = null; try {{ t = localStorage.getItem("noelle-theme"); }} catch (e) {{}}
     if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); }})();</script>
   <script src="{asset}config.js"></script>
+  <script src="{asset}agent.js" defer></script>
   <script src="{asset}main.js" defer></script>
 </head>
 <body>
@@ -213,6 +216,8 @@ def sitemap_footer(pages: list[Page], from_page: Page | None) -> str:
         <span>© <span data-year></span> Noelle · MIT License</span>
         <span><a href="{relative(from_page, 'docs/privacy/')}">Privacy Policy</a> ·
           <a href="{relative(from_page, 'docs/terms/')}">Terms of Service</a> ·
+          <a href="{relative(from_page, 'llms.txt')}">llms.txt</a> ·
+          <a href="{relative(from_page, 'auth.md')}">auth.md</a> ·
           <a href="{home}#download" data-link="source">Source code</a> ·
           <a href="{relative(from_page, 'sitemap.xml')}">sitemap.xml</a></span>
       </div>
@@ -315,7 +320,7 @@ def main() -> int:
                         f"    <priority>{priority}</priority>\n  </url>" for path, priority, mod in urls)
     write(SITE / "sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n'
           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + entries + "\n</urlset>\n")
-    write(SITE / "robots.txt", f"User-agent: *\nAllow: /\n\nSitemap: {BASE_URL}/sitemap.xml\n")
+    write(SITE / "robots.txt", f"User-agent: *\nContent-Signal: ai-train=yes, search=yes, ai-input=yes\nAllow: /\n\nSitemap: {BASE_URL}/sitemap.xml\nAgentmap: {BASE_URL}/.well-known/ai-catalog.json\n")
     write(SITE / "CNAME", BASE_URL.split("://", 1)[1] + "\n")
     print(f"{len(pages)} docs pages · {len(urls)} URLs in sitemap.xml")
     return 0

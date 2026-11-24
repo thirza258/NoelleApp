@@ -8,6 +8,8 @@
   <meta name="theme-color" content="#FFC700" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0B0B0D" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://noelle.nevatal.id/">
+  <link rel="describedby" type="text/markdown" href="/auth.md">
+  <link rel="alternate" type="text/markdown" href="/llms.txt" title="LLM Overview">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://noelle.nevatal.id/">
   <meta property="og:title" content="Noelle — your local AI model lab">
@@ -26,6 +28,7 @@
     })();
   </script>
   <script src="config.js"></script>
+  <script src="agent.js" defer></script>
   <script src="main.js" defer></script>
 </head>
 <body>
@@ -454,11 +457,74 @@ claude mcp add noelle -- noelle mcp
         <span>© <span data-year></span> Noelle · MIT License</span>
         <span><a href="docs/privacy/">Privacy Policy</a> ·
           <a href="docs/terms/">Terms of Service</a> ·
+          <a href="llms.txt">llms.txt</a> ·
+          <a href="auth.md">auth.md</a> ·
           <a href="./#download" data-link="source">Source code</a> ·
           <a href="sitemap.xml">sitemap.xml</a></span>
       </div>
     </div>
   </footer>
   <!-- sitemap:end -->
+  <script id="webmcp-tools">
+  (function () {
+    const tools = [
+      {
+        name: "get_noelle_info",
+        description: "Get the site name, description, capabilities, and download links for Noelle local AI model lab.",
+        inputSchema: { type: "object", properties: {} },
+        execute: async function () {
+          if (window.NoelleAgent && typeof window.NoelleAgent.getInfo === "function") {
+            return window.NoelleAgent.getInfo();
+          }
+          const res = await fetch("/.well-known/agent-card.json");
+          return await res.json();
+        }
+      },
+      {
+        name: "get_hardware_advisor",
+        description: "Get model fit recommendations and quantization advice based on available VRAM in GB.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vramGB: { type: "number", description: "Available VRAM in gigabytes (e.g. 8, 16, 24)" }
+          }
+        },
+        execute: async function (args) {
+          if (window.NoelleAgent && typeof window.NoelleAgent.getHardwareAdvisor === "function") {
+            return window.NoelleAgent.getHardwareAdvisor(args && args.vramGB);
+          }
+          return { error: "Agent module loading..." };
+        }
+      },
+      {
+        name: "get_mcp_config",
+        description: "Get configuration snippet for Claude Code, Cursor, or Claude Desktop to connect to Noelle MCP.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            client: { type: "string", description: "Target client: claudeCode, cursor, or claudeDesktop" }
+          }
+        },
+        execute: async function (args) {
+          if (window.NoelleAgent && typeof window.NoelleAgent.getMcpConfig === "function") {
+            return window.NoelleAgent.getMcpConfig(args && args.client);
+          }
+          return { error: "Agent module loading..." };
+        }
+      }
+    ];
+    const mc = (typeof navigator !== "undefined" && navigator.modelContext) ||
+      (typeof document !== "undefined" && document.modelContext);
+    if (!mc) return;
+    if (typeof mc.provideContext === "function") {
+      try { mc.provideContext({ tools: tools }); } catch (e) {}
+    }
+    if (typeof mc.registerTool === "function") {
+      tools.forEach(function (tool) {
+        try { mc.registerTool(tool); } catch (e) {}
+      });
+    }
+  })();
+  </script>
 </body>
 </html>

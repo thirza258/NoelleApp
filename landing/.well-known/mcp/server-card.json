@@ -1,0 +1,53 @@
+{
+  "serverInfo": {
+    "name": "noelle-mcp",
+    "version": "1.0.0"
+  },
+  "endpoint": "http://127.0.0.1:8765/v1",
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    },
+    "resources": {
+      "subscribe": false,
+      "listChanged": false
+    },
+    "prompts": {
+      "listChanged": false
+    }
+  },
+  "tools": [
+    {
+      "name": "hardware_info",
+      "description": "Report local accelerator, usable memory, memory bandwidth, and installed inference engines."
+    },
+    {
+      "name": "list_local_models",
+      "description": "List all models downloaded or built in the local Noelle library."
+    },
+    {
+      "name": "search_models",
+      "description": "Search Hugging Face with machine-specific fit score and VRAM compatibility calculations."
+    },
+    {
+      "name": "inspect_model",
+      "description": "Retrieve comprehensive model metadata, recommended quantizations, context window, and estimated tokens/second."
+    },
+    {
+      "name": "chat",
+      "description": "Execute chat completion with local models (supports auto routing)."
+    },
+    {
+      "name": "embed",
+      "description": "Generate vector embeddings using a local embedding model."
+    },
+    {
+      "name": "list_knowledge_bases",
+      "description": "List available local document collections and RAG knowledge bases."
+    },
+    {
+      "name": "query_knowledge_base",
+      "description": "Semantic query across indexed local documents and notes."
+    }
+  ]
+}

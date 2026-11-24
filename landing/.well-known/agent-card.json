@@ -1,0 +1,84 @@
+{
+  "name": "Noelle Desktop Agent",
+  "description": "Local AI model lab for macOS, Windows and Linux. Hardware advisor, local model execution (GGUF, MLX, EXL2, Transformers), evaluation lab, knowledge canvas RAG, local OpenAI-compatible API, and Model Context Protocol (MCP) server.",
+  "url": "https://noelle.nevatal.id",
+  "provider": {
+    "name": "Nevatal",
+    "url": "https://noelle.nevatal.id"
+  },
+  "version": "1.0.0",
+  "protocolVersion": "0.3.0",
+  "preferredTransport": "JSONRPC",
+  "supportedInterfaces": [
+    {
+      "url": "https://noelle.nevatal.id/docs/api/",
+      "protocolBinding": "HTTP",
+      "protocolVersion": "1.0.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "hardware-compatibility",
+      "name": "Hardware & VRAM Compatibility Advisor",
+      "description": "Analyze system accelerator, usable RAM/VRAM, bandwidth, and determine model fit and quantization tiers."
+    },
+    {
+      "id": "local-model-execution",
+      "name": "Local Model Execution & Management",
+      "description": "Discover, run, and manage open models (GGUF, MLX, EXL2, Transformers) completely on-device without telemetry."
+    },
+    {
+      "id": "model-context-protocol",
+      "name": "Model Context Protocol (MCP) Server",
+      "description": "Provide MCP tools for Claude Code, Cursor, and agents to interact with local models and knowledge bases."
+    },
+    {
+      "id": "local-rag-knowledge",
+      "name": "Knowledge Canvas & Local RAG",
+      "description": "Chunk, embed, and query local documents and notes with full vector search on your machine."
+    },
+    {
+      "id": "evaluation-lab",
+      "name": "Model Evaluation Lab",
+      "description": "Benchmark and compare prompt outputs, latency, memory consumption, and tokens per second side-by-side."
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_noelle_info",
+      "description": "Get general overview, architecture, and capabilities of Noelle local AI lab."
+    },
+    {
+      "name": "get_hardware_advisor",
+      "description": "Get guidance on memory requirements and model quant recommendations based on VRAM."
+    },
+    {
+      "name": "get_mcp_config",
+      "description": "Get configuration snippet for Claude Code, Cursor, or Claude Desktop to connect to Noelle's MCP server."
+    },
+    {
+      "name": "get_api_docs",
+      "description": "Get information about the local OpenAI-compatible API endpoints (http://127.0.0.1:8765/v1)."
+    },
+    {
+      "name": "get_download_info",
+      "description": "Get download links and platform support for macOS, Windows, and Linux."
+    }
+  ],
+  "authentication": {
+    "type": "oauth2",
+    "discovery_url": "https://noelle.nevatal.id/.well-known/oauth-authorization-server"
+  }
+}
