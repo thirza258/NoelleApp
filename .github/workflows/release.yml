@@ -40,9 +40,14 @@ jobs:
       - name: Inno Setup (Windows)
         if: runner.os == 'Windows'
         run: choco install innosetup --no-progress -y
-      - name: CUDA PyTorch (Linux/Windows - CUDA 12.4 LTS)
-        if: runner.os != 'macOS'
-        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+      - name: PyTorch (CUDA for Windows, CPU for Linux keeps installer < 2GB)
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          fi
+        shell: bash
       - name: Install Noelle
         run: python -m pip install -e ".[all,dev]"
       - name: Import macOS signing certificate
@@ -68,13 +73,16 @@ jobs:
         run: python packaging/build.py --clean --sign
       - name: Smoke-test the built app
         shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then BIN=dist/Noelle.app/Contents/MacOS/Noelle; \
           elif [ "$RUNNER_OS" = "Windows" ]; then BIN=dist/Noelle/Noelle.exe; else BIN=dist/Noelle/Noelle; fi
           "$BIN" download --help
           "$BIN" env list
-          "$BIN" eval --list-datasets | grep -q "builtin:reasoning-math"   # datasets bundled as package data
-          "$BIN" mcp --print-config | grep -q mcpServers
+          "$BIN" eval --list-datasets | grep "builtin:reasoning-math"   # datasets bundled as package data
+          "$BIN" mcp --print-config | grep "mcpServers"
       - uses: actions/upload-artifact@v4
         with:
           name: noelle-installer-${{ matrix.os }}
