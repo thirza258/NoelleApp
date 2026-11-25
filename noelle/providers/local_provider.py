@@ -69,7 +69,7 @@ class LocalProvider(AIProvider):
 
     def execute(self, request: NodeRequest) -> NodeResponse:
         modality = request.modality_str
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
         try:
             if modality == Modality.LLM.value:
                 return self._execute_llm(request, start_time)
@@ -91,7 +91,7 @@ class LocalProvider(AIProvider):
                     error_message=f"Unsupported local modality: {modality}",
                 )
         except Exception as exc:  # noqa: BLE001
-            latency = (time.monotonic() - start_time) * 1000.0
+            latency = (time.perf_counter() - start_time) * 1000.0
             log.exception("Local execution error: %s", exc)
             return NodeResponse(
                 output="",
@@ -107,7 +107,7 @@ class LocalProvider(AIProvider):
         if self.runtime_client is not None and hasattr(self.runtime_client, "generate"):
             try:
                 res = self.runtime_client.generate(req.prompt, model=req.model)
-                latency_ms = (time.monotonic() - start) * 1000.0
+                latency_ms = (time.perf_counter() - start) * 1000.0
                 tokens = len(res.split())
                 return NodeResponse(
                     output=res,
@@ -125,7 +125,7 @@ class LocalProvider(AIProvider):
                 log.debug("RuntimeClient generate fell back: %s", exc)
 
         # High-performance local deterministic fallback
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         output_tokens = min(req.max_tokens, max(12, len(req.prompt.split()) * 2))
         simulated_output = f"[Local {req.model or 'Qwen2.5-7B'}] Response to: {req.prompt[:60]}..."
         return NodeResponse(
@@ -153,7 +153,7 @@ class LocalProvider(AIProvider):
             norm = math.sqrt(sum(x * x for x in vec)) or 1.0
             embeddings.append([x / norm for x in vec])
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         return NodeResponse(
             output=embeddings if len(embeddings) > 1 else embeddings[0],
             telemetry=TelemetryRecord(
@@ -171,7 +171,7 @@ class LocalProvider(AIProvider):
         if req.audio_bytes:
             audio_len = max(0.5, len(req.audio_bytes) / 32000.0)
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         simulated_transcript = "Transkripsi lokal audio berhasil menggunakan Whisper on-device."
         rtf = (latency_ms / 1000.0) / audio_len
 
@@ -189,7 +189,7 @@ class LocalProvider(AIProvider):
         )
 
     def _execute_tts(self, req: NodeRequest, start: float) -> NodeResponse:
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         # Simulated 16kHz PCM audio wave (1.5 seconds)
         duration_s = max(0.5, len(req.prompt) / 18.0)
         num_samples = int(16000 * duration_s)
@@ -209,7 +209,7 @@ class LocalProvider(AIProvider):
         )
 
     def _execute_vision(self, req: NodeRequest, start: float) -> NodeResponse:
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         output_text = f"[Local VLM] Visual analysis of image with query: '{req.prompt}'"
         return NodeResponse(
             output=output_text,

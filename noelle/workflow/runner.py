@@ -84,7 +84,7 @@ class WorkflowRunner:
     def execute(self, graph: WorkflowGraph, initial_inputs: dict[str, Any] | None = None,
                 consent_given: bool = True) -> WorkflowResult:
         """Run workflow graph to completion."""
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
 
         # 1. Privacy Governance Check
         if graph.privacy_mode == PrivacyMode.LOCAL_ONLY and graph.has_cloud_nodes():
@@ -142,7 +142,7 @@ class WorkflowRunner:
                 if self.node_callback:
                     self.node_callback(node_id, "done")
             except Exception as exc:
-                latency = (time.monotonic() - start_time) * 1000.0
+                latency = (time.perf_counter() - start_time) * 1000.0
                 log.exception("Node execution error at '%s': %s", node_id, exc)
                 if self.node_callback:
                     self.node_callback(node_id, "error")
@@ -158,7 +158,7 @@ class WorkflowRunner:
                     error_message=f"Node '{node_id}' failed: {exc}",
                 )
 
-        total_latency = (time.monotonic() - start_time) * 1000.0
+        total_latency = (time.perf_counter() - start_time) * 1000.0
         return WorkflowResult(
             workflow_id=graph.id,
             workflow_name=graph.name,

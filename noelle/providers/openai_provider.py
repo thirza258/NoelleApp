@@ -103,7 +103,7 @@ class OpenAIProvider(AIProvider):
             )
 
         modality = request.modality_str
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
         try:
             if modality == Modality.LLM.value or modality == Modality.VISION.value:
                 return self._execute_chat(request, key, start_time)
@@ -123,7 +123,7 @@ class OpenAIProvider(AIProvider):
                     error_message=f"Unsupported modality '{modality}' for OpenAI provider",
                 )
         except Exception as exc:  # noqa: BLE001
-            latency = (time.monotonic() - start_time) * 1000.0
+            latency = (time.perf_counter() - start_time) * 1000.0
             log.exception("OpenAI execution failure: %s", exc)
             return NodeResponse(
                 output="",
@@ -174,7 +174,7 @@ class OpenAIProvider(AIProvider):
         resp.raise_for_status()
         data = resp.json()
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         output_text = data["choices"][0]["message"]["content"] or ""
         usage = data.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
@@ -213,7 +213,7 @@ class OpenAIProvider(AIProvider):
         resp.raise_for_status()
         data = resp.json()
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         embeddings = [item["embedding"] for item in data["data"]]
         usage = data.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
@@ -262,7 +262,7 @@ class OpenAIProvider(AIProvider):
         resp.raise_for_status()
         data = resp.json()
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         transcript = data.get("text", "")
         # Estimate duration roughly from WAV or default
         duration_s = max(1.0, len(audio_content) / 32000.0)
@@ -299,7 +299,7 @@ class OpenAIProvider(AIProvider):
         resp.raise_for_status()
         audio_bytes = resp.content
 
-        latency_ms = (time.monotonic() - start) * 1000.0
+        latency_ms = (time.perf_counter() - start) * 1000.0
         text_chars = len(req.prompt)
         cost = calculate_cost(model, text_chars=text_chars)
         # Approximate audio duration from mp3 size (128kbps = 16KB/s)

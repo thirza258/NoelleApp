@@ -298,7 +298,7 @@ class RAGNode(BaseNode):
         docs = inputs.get("documents") or self.parameters.get("documents", [])
         top_k = int(self.parameters.get("top_k", 3))
 
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
         passages: list[str] = []
         if isinstance(docs, list):
             # Simple keyword / token overlap ranking over documents
@@ -313,7 +313,7 @@ class RAGNode(BaseNode):
         elif isinstance(docs, str) and docs.strip():
             passages = [docs.strip()]
 
-        latency_ms = (time.monotonic() - start_time) * 1000.0
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
         context_str = "\n---\n".join(passages)
 
         if hasattr(ctx, "record_telemetry"):

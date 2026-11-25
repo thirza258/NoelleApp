@@ -104,7 +104,7 @@ class OpenRouterProvider(AIProvider):
             )
 
         model = request.model or "qwen/qwen-2.5-72b-instruct"
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
         messages: list[dict[str, Any]] = []
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
@@ -128,7 +128,7 @@ class OpenRouterProvider(AIProvider):
             resp.raise_for_status()
             data = resp.json()
 
-            latency_ms = (time.monotonic() - start_time) * 1000.0
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
             output_text = data["choices"][0]["message"]["content"] or ""
             usage = data.get("usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
@@ -157,7 +157,7 @@ class OpenRouterProvider(AIProvider):
                 raw_payload=data,
             )
         except Exception as exc:  # noqa: BLE001
-            latency_ms = (time.monotonic() - start_time) * 1000.0
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
             log.exception("OpenRouter request failed: %s", exc)
             return NodeResponse(
                 output="",
