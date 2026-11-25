@@ -566,9 +566,12 @@ def test_api_key_with_unsendable_characters_is_not_echoed() -> None:
 
 def test_print_config_points_at_this_installation(capsys: pytest.CaptureFixture[str],
                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    from noelle.runtime.client import worker_command
+
+    expected_cmd = worker_command()[0]
     assert mcp.main(argparse.Namespace(print_config=True, api_url=None)) == 0
     assert json.loads(capsys.readouterr().out) == {
-        "mcpServers": {"noelle": {"command": sys.executable, "args": ["-m", "noelle", "mcp"]}}}
+        "mcpServers": {"noelle": {"command": expected_cmd, "args": ["-m", "noelle", "mcp"]}}}
     monkeypatch.setattr(sys, "frozen", True, raising=False)  # PyInstaller build: the executable is the CLI
     assert mcp.main(argparse.Namespace(print_config=True, api_url="http://127.0.0.1:9000")) == 0
     assert json.loads(capsys.readouterr().out)["mcpServers"]["noelle"] == {
