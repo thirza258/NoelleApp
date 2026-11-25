@@ -26,7 +26,7 @@ slow.
 
 ## macOS
 
-1. Open `Noelle-1.0.0-macos-arm64.pkg` and follow the steps. Choose **Install for me only** if you don't have an
+1. Open `Noelle-1.1.0-macos-arm64.pkg` and follow the steps. Choose **Install for me only** if you don't have an
    administrator password.
 2. Or open the `.dmg` and drag **Noelle** into **Applications**.
 3. The first time you open Noelle, macOS may say it can't verify the developer. Open **System Settings ›
@@ -34,14 +34,14 @@ slow.
 
 ## Windows
 
-1. Run `Noelle-1.0.0-windows-x64-setup.exe`.
+1. Run `Noelle-1.1.0-windows-x64-setup.exe`.
 2. If SmartScreen shows "Windows protected your PC", click **More info › Run anyway**.
 3. The wizard lets you paste a Hugging Face token (optional) and creates a Start-menu shortcut.
 
 ## Linux
 
 ```bash
-sudo apt install ./noelle_1.0.0_amd64.deb
+sudo apt install ./noelle_1.1.0_amd64.deb
 ```
 
 Then open **Noelle AI Studio** from your app menu. The `.tar.gz` archive is a portable alternative: unpack it and

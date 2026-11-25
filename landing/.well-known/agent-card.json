@@ -6,7 +6,7 @@
     "name": "Nevatal",
     "url": "https://noelle.nevatal.id"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "protocolVersion": "0.3.0",
   "preferredTransport": "JSONRPC",
   "supportedInterfaces": [

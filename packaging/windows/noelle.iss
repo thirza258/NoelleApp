@@ -1,5 +1,5 @@
 ; Inno Setup script for the step-by-step Windows installer (built by packaging/build.py with iscc).
-;   iscc /DAppVersion=1.0.0 /DSourceDir=<dist\Noelle> /DOutputDir=<dist> packaging\windows\noelle.iss
+;   iscc /DAppVersion=1.1.0 /DSourceDir=<dist\Noelle> /DOutputDir=<dist> packaging\windows\noelle.iss
 ;
 ; Pages: Welcome -> License -> Install mode (just me / all users) -> Location -> Start menu ->
 ;        Additional tasks -> Hugging Face account (optional token) -> Ready -> Install -> Finish.
@@ -7,7 +7,7 @@
 ; Windows Credential Manager as the user who started Setup, and deleted immediately.
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\Noelle"
