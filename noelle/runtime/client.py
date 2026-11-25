@@ -9,6 +9,7 @@ Safe to import from the UI: no torch, no Qt.
 
 from __future__ import annotations
 
+import logging
 import os
 import queue
 import secrets
@@ -35,6 +36,7 @@ from noelle.runtime.protocol import (
 )
 
 PACKAGE_PARENT = str(Path(__file__).resolve().parents[2])
+log = logging.getLogger("noelle.ipc")
 
 
 class WorkerError(RuntimeError):
@@ -98,6 +100,7 @@ class WorkerProcess:
         return WorkerClient(self.endpoint, self.token)
 
     def stop(self, timeout: float = 10.0) -> int | None:
+        log.info("stopping worker pid %s", self.process.pid)
         if self.process.poll() is None:
             try:
                 self.client().call(Command.SHUTDOWN, timeout=3.0)
@@ -136,6 +139,7 @@ def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None
     env = build_worker_env(token, hf_home=hf_home, offline=offline, extra=extra_env)
     log_path = log_path or (paths.logs_dir() / "worker-stderr.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    log.info("spawning worker: %s (log: %s)", " ".join(args), log_path)
     stderr: IO[str] = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 - owned by the child
     kwargs: dict[str, Any] = {}
     if sys.platform == "win32":
@@ -166,6 +170,7 @@ def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None
         while port is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                log.error("worker did not report ready within %.0fs; see %s", ready_timeout, log_path)
                 raise TimeoutError(f"worker did not report ready within {ready_timeout:.0f}s; see {log_path}")
             try:
                 line = lines.get(timeout=min(remaining, 0.25))
@@ -173,6 +178,7 @@ def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None
                 continue
             if line is None:
                 code = _wait_quietly(proc)
+                log.error("worker exited during startup (code %s); see %s", code, log_path)
                 raise RuntimeError(f"worker exited during startup (code {code}); see {log_path}")
             if line.startswith(READY_PREFIX):
                 port = parse_ready_port(line)
@@ -182,9 +188,11 @@ def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None
             raise RuntimeError(f"worker exited immediately after reporting ready (code {proc.returncode}); "
                                f"see {log_path}")
     except BaseException:
+        log.error("worker startup failed; terminating the child")
         _terminate_process(proc, stream)
         raise
     collecting.clear()  # keep draining stdout, but do not grow an unbounded queue
+    log.info("worker ready on port %s (pid %s)", port, proc.pid)
     return WorkerProcess(proc, port, token)
 
 

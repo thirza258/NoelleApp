@@ -28,6 +28,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -41,6 +42,7 @@ from typing import Any
 from tqdm import tqdm as _vanilla_tqdm
 
 _print_lock = threading.Lock()
+log = logging.getLogger("noelle.download-child")
 
 # Weight formats that transformers/diffusers would not load when safetensors exist.
 _REDUNDANT_WEIGHTS = ("*.bin", "*.pt", "*.pth", "*.ckpt", "*.h5", "*.msgpack", "*.ot", "*.onnx", "*.onnx_data",
@@ -193,23 +195,30 @@ def download_file(api_kwargs: dict[str, Any], entry: RepoFile, *, retries: int, 
     while True:
         attempt += 1
         try:
+            log.info("downloading %s (attempt %d)", entry.name, attempt)
             path = Path(hf_hub_download(filename=entry.name, tqdm_class=_reporter(entry.name, totals), **api_kwargs))
             if verify:
                 ok = verify_file(path, entry)
                 emit({"type": "verify", "file": entry.name, "ok": ok})
                 if ok is False:
+                    log.warning("checksum mismatch for %s; deleting the file so the retry downloads it again",
+                                entry.name)
                     real = path.resolve()
                     real.unlink(missing_ok=True)
                     if path.is_symlink():
                         path.unlink(missing_ok=True)
                     raise IOError(f"checksum mismatch for {entry.name}")
             size = path.resolve().stat().st_size
+            log.info("downloaded %s (%d bytes)", entry.name, size)
             emit({"type": "file_done", "file": entry.name, "size": size})
             return path
         except Exception as exc:  # noqa: BLE001
             if attempt > retries or not _is_retryable(exc):
+                log.warning("giving up on %s after %d attempt(s): %s", entry.name, attempt, exc)
                 raise
             wait = min(2 ** attempt, 60)
+            log.warning("transient failure for %s (attempt %d): %s; retrying in %ss",
+                        entry.name, attempt, exc, wait)
             emit({"type": "retry", "file": entry.name, "attempt": attempt, "wait_s": wait, "error": str(exc)[:300]})
             time.sleep(wait)
 
@@ -253,6 +262,7 @@ def run(args: argparse.Namespace) -> int:
 
     token = os.environ.get("HF_TOKEN") or None
     api = HfApi(token=token)
+    log.info("resolving %s (revision %s, authenticated=%s)", args.repo_id, args.revision or "main", bool(token))
     try:
         info = api.model_info(args.repo_id, revision=args.revision, files_metadata=True)
     except GatedRepoError:
@@ -284,16 +294,21 @@ def run(args: argparse.Namespace) -> int:
     emit({"type": "plan", "repo_id": args.repo_id, "revision": args.revision or "main", "commit": commit,
           "files": plan, "total_bytes": total, "download_bytes": needed,
           "target": str(target_root), "mode": "local_dir" if args.local_dir else "hf_cache"})
+    log.info("plan: %d file(s), %d selected, %d bytes to download, target %s",
+             len(files), len(selected), needed, target_root)
     if args.dry_run:
+        log.info("dry run: stopping before any download")
         return 0
     free = shutil.disk_usage(target_root).free
     if needed > free * 0.95:
+        log.warning("not enough disk space: need %d bytes, free %d bytes on %s", needed, free, target_root)
         emit({"type": "error", "code": "DISK_FULL",
               "message": f"Needs {needed / 1e9:.2f} GB but only {free / 1e9:.2f} GB is free on {target_root}."})
         return 2
     if not args.local_dir:
         removed = clean_stale_incomplete(repo_cache_folder(cache_dir, args.repo_id))
         if removed:
+            log.info("removed %d stale .incomplete file(s)", removed)
             emit({"type": "cleanup", "removed_incomplete": removed})
 
     api_kwargs: dict[str, Any] = {"repo_id": args.repo_id, "revision": commit, "token": token}
@@ -316,9 +331,11 @@ def run(args: argparse.Namespace) -> int:
                 failures.append(entry.name)
                 emit({"type": "file_error", "file": entry.name, "message": str(exc)[:500]})
     if failures:
+        log.warning("%d file(s) failed: %s", len(failures), ", ".join(failures[:10]))
         emit({"type": "error", "code": "INCOMPLETE",
               "message": f"{len(failures)} file(s) failed: {', '.join(failures[:5])}. Retry to resume."})
         return 1
+    log.info("all files downloaded and verified")
 
     if args.local_dir:
         path = str(target_root)
@@ -339,11 +356,19 @@ def run(args: argparse.Namespace) -> int:
 
 def main(args: argparse.Namespace) -> int:
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    from noelle import logging_setup
+
+    logging_setup.configure_download_logging()
+    log.info("download child starting: %s", args.repo_id)
     try:
-        return run(args)
+        code = run(args)
+        log.info("download child finished with code %d", code)
+        return code
     except KeyboardInterrupt:
+        log.warning("download child interrupted by the user")
         emit({"type": "error", "code": "CANCELLED", "message": "Download cancelled."})
         return 130
     except Exception as exc:  # noqa: BLE001
+        log.exception("download child failed")
         emit({"type": "error", "code": "INTERNAL", "message": f"{type(exc).__name__}: {exc}"})
         return 1

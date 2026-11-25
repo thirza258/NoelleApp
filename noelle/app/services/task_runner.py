@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import traceback
 from typing import Any, Callable
 
@@ -37,7 +38,7 @@ class Task(QRunnable):
                 self.signals.error.emit(message)
             except RuntimeError:
                 pass  # receiver already deleted
-            _log_debug(traceback.format_exc())
+            _log_failure(traceback.format_exc())
         else:
             try:
                 self.signals.result.emit(value)
@@ -50,10 +51,8 @@ class Task(QRunnable):
                 pass
 
 
-def _log_debug(text: str) -> None:
-    import logging
-
-    logging.getLogger("noelle.tasks").debug(text)
+def _log_failure(text: str) -> None:
+    logging.getLogger("noelle.tasks").warning("background task failed:\n%s", text)
 
 
 def _guard(callback: Callable[..., None]) -> Callable[..., None]:
@@ -94,6 +93,8 @@ class TaskRunner(QObject):
             task.signals.finished.connect(_guard(on_finished))
         task.signals.finished.connect(lambda t=task: self._live.discard(t))
         self._live.add(task)
+        logging.getLogger("noelle.tasks").debug("submitted %s (%d active)",
+                                                getattr(fn, "__name__", type(fn).__name__), len(self._live))
         self.pool.start(task)
         return task
 

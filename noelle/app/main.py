@@ -3,24 +3,16 @@
 from __future__ import annotations
 
 import logging
-import logging.handlers
 import os
 import sys
+from pathlib import Path
 
-from noelle import APP_ID, APP_NAME, __version__, paths
+from noelle import APP_ID, APP_NAME, __version__, logging_setup, paths
 from noelle.config import get_settings
 
 
 def _configure_logging() -> None:
-    paths.logs_dir().mkdir(parents=True, exist_ok=True)
-    handler = logging.handlers.RotatingFileHandler(paths.logs_dir() / "app.log", maxBytes=2_000_000, backupCount=3,
-                                                   encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.addHandler(handler)
-    for noisy in ("httpx", "httpx2", "httpcore", "huggingface_hub", "urllib3"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    logging_setup.configure_desktop_logging()
     _install_excepthook()
 
 
@@ -69,6 +61,24 @@ def build_context():  # noqa: ANN201 - returns AppContext
                       runtime=runtime, hardware=hardware, downloads=downloads, server=server)
 
 
+def _clean_stale_token_handoffs() -> None:
+    """Remove installer hand-over files left behind if Setup or the import process was killed."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return
+    folder = Path(appdata) / "Noelle"
+    try:
+        entries = list(folder.glob("pending-hf-token-*.txt"))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            entry.unlink()
+            logging.getLogger("noelle").info("Removed a stale installer token hand-over file.")
+        except OSError:
+            pass
+
+
 def _prepare_storage() -> OSError | None:
     """Create the data directories; return the error instead of crashing before any UI exists."""
     try:
@@ -79,6 +89,7 @@ def _prepare_storage() -> OSError | None:
         _configure_logging()
     except OSError as exc:  # e.g. a full disk: the app can still run, but say so on stderr
         print(f"Noelle could not open its log file: {exc}", file=sys.stderr)
+    _clean_stale_token_handoffs()
     return None
 
 
@@ -108,6 +119,9 @@ def run(argv: list[str] | None = None) -> int:
             "Check the folder permissions or set the NOELLE_HOME environment variable to a writable folder.")
         return 1
     _apply_environment()
+    logging.getLogger("noelle").info(
+        "Noelle %s starting (python %s, frozen=%s, home=%s, logs=%s)",
+        __version__, sys.version.split()[0], getattr(sys, "frozen", False), paths.home(), paths.logs_dir())
 
     ctx = build_context()
     window = MainWindow(ctx)

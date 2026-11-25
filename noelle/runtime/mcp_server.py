@@ -34,12 +34,11 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
-from logging.handlers import RotatingFileHandler
 from typing import Any, Mapping, TextIO
 
 import httpx
 
-from noelle import __version__, paths
+from noelle import __version__
 from noelle.app.services import hf_client
 from noelle.app.services.model_registry import get_registry
 from noelle.config import Settings, get_settings
@@ -718,21 +717,11 @@ def client_config(api_url: str | None = None) -> dict[str, Any]:
 
 
 def _configure_logging() -> None:
+    """MCP protocol frames own stdout; logs go to ``logs/mcp.log`` and (warnings+) stderr."""
+    from noelle import logging_setup
+
+    logging_setup.configure_mcp_logging()
     log.setLevel(logging.INFO)
-    log.propagate = False
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    stream = logging.StreamHandler(sys.stderr)
-    stream.setLevel(logging.WARNING)
-    stream.setFormatter(formatter)
-    log.addHandler(stream)
-    try:
-        paths.logs_dir().mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(paths.logs_dir() / "mcp.log", maxBytes=1_000_000, backupCount=2,
-                                      encoding="utf-8")
-    except OSError:
-        return  # warnings and errors still reach stderr
-    handler.setFormatter(formatter)
-    log.addHandler(handler)
 
 
 def main(args: argparse.Namespace) -> int:

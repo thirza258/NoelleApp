@@ -140,6 +140,7 @@ class RuntimeClient(QObject):
 
     def _set_state(self, state: str) -> None:
         if state != self._state:
+            log.info("runtime state: %s -> %s", self._state, state)
             self._state = state
             self.state_changed.emit(state)
 
@@ -166,6 +167,8 @@ class RuntimeClient(QObject):
                 self._stderr_tail.append(f"Runtime environment '{env_name}' could not be resolved: {exc}")
                 python = None
         command = worker_command(python)
+        log.info("starting the model runtime: device=%s environment=%s exe=%s",
+                 self.settings.get("runtime.device", "auto"), env_name or "application", command[0])
         args = command[1:] + ["worker", "--port", "0", "--parent-pid", str(os.getpid()),
                               "--device", str(self.settings.get("runtime.device", "auto")),
                               "--headroom", str(self.settings.get("runtime.safety_headroom", 0.15))]
@@ -196,6 +199,7 @@ class RuntimeClient(QObject):
         process.start()
 
     def stop(self, timeout_ms: int = 5000) -> None:
+        log.info("stopping the model runtime (timeout %d ms)", timeout_ms)
         self._stopping = True
         self._watchdog.stop()
         process, self._process = self._process, None  # ignore any signal this process emits while stopping
@@ -225,12 +229,14 @@ class RuntimeClient(QObject):
     def request(self, cmd: Command, payload: dict[str, Any] | None = None) -> RequestHandle:
         request_id, frame = make_request(cmd, payload or {}, auth=self._token)
         handle = RequestHandle(request_id, cmd, self)
+        log.debug("request %s %s", cmd, request_id)
         if self._state == "stopped" or self._process is None:
             self.start()
         if self._state in ("crashed", "unresponsive"):
             message = ("The model runtime crashed. Restart it from the status bar."
                        if self._state == "crashed" else
                        "The model runtime is not responding. Restart it from the status bar.")
+            log.warning("refusing %s %s: runtime is %s", cmd, request_id, self._state)
             self._refuse_later(handle, message)
             return handle
         self._pending[request_id] = handle
@@ -241,6 +247,7 @@ class RuntimeClient(QObject):
         return handle
 
     def stop_request(self, request_id: str | None = None) -> None:
+        log.info("requesting cancellation of worker request %s", request_id or "all")
         _, frame = make_request(Command.STOP_GENERATION, {"target_id": request_id}, auth=self._token)
         if self._listener is not None:
             self._listener.send(frame)
@@ -259,10 +266,12 @@ class RuntimeClient(QObject):
                     # A malformed handshake would otherwise leave the app in "starting" forever.
                     self._stderr_tail.append(f"The runtime sent an invalid ready line: {line[:200]}")
                     self.log_line.emit(self._stderr_tail[-1])
+                    log.error("the runtime sent an invalid ready line: %s", line[:200])
                     process.kill()
                     self._handle_exit(-1, crashed=True)
                     continue
                 self._port = port
+                log.info("model runtime is ready on port %d", port)
                 self._connect()
             elif line:
                 self.log_line.emit(line)
@@ -274,9 +283,11 @@ class RuntimeClient(QObject):
         for line in text.splitlines():
             if line.strip():
                 self._stderr_tail.append(line)
+                log.debug("worker stderr: %s", line)
                 self.log_line.emit(line)
 
     def _connect(self) -> None:
+        log.info("connecting to the model runtime at %s", self.endpoint)
         listener = StreamListener(self.endpoint or "", self)
         listener.message_received.connect(self._on_message)
         listener.connection_error.connect(self._on_ipc_error)
@@ -308,6 +319,7 @@ class RuntimeClient(QObject):
                 init_error = payload.get("init_error")
                 if isinstance(init_error, str) and init_error and not self._init_error_reported:
                     self._init_error_reported = True
+                    log.error("the runtime failed to initialise: %s", init_error)
                     diagnosis = f"The runtime could not initialise: {init_error}"
                     self._fail_pending(error_payload(ErrorCode.WORKER_CRASHED, diagnosis,
                                                      hint="Check the runtime Python and installed extras in Settings."))
@@ -335,6 +347,8 @@ class RuntimeClient(QObject):
             return
         timeout = float(self.settings.get("runtime.heartbeat_timeout_s", 20))
         if time.monotonic() - self._last_heartbeat > timeout:
+            log.warning("no worker heartbeat for %.0fs; marking the runtime unresponsive",
+                        time.monotonic() - self._last_heartbeat)
             self._set_state("unresponsive")
             # Do not leave the UI stuck on "Generating…" behind a wedged worker.
             self._fail_pending(error_payload(
@@ -358,6 +372,7 @@ class RuntimeClient(QObject):
 
     def _on_ipc_error(self, message: str) -> None:
         """The listener died: pending requests must fail instead of waiting forever."""
+        log.error("IPC connection failed: %s", message)
         self.log_line.emit(f"IPC error: {message}")
         if self._stopping or self._state in ("stopped", "crashed"):
             return
@@ -384,6 +399,7 @@ class RuntimeClient(QObject):
             self._set_state("stopped")
             return
         diagnosis = diagnose_exit(exit_code, self.stderr_tail())
+        log.error("the model runtime exited (code %s): %s", exit_code, diagnosis)
         self._fail_pending(error_payload(ErrorCode.WORKER_CRASHED, diagnosis,
                                          hint="Restart the runtime. Try a smaller or 4-bit model if it repeats."))
         self._set_state("crashed")

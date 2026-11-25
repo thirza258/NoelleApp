@@ -45,7 +45,7 @@ from typing import Any, Callable, Iterable, Protocol
 
 from noelle import paths
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("noelle.storage")
 
 REPO_TYPES = {"models": "model", "datasets": "dataset", "spaces": "space", "kernels": "kernel"}
 _REPO_DIR_RE = re.compile(r"^(models|datasets|spaces|kernels)--(.+)$")
@@ -858,7 +858,9 @@ def delete_repo(repo_id: str, cache_dir: str | os.PathLike[str] | None = None, *
     incomplete = sum(f.size_bytes for f in scan.state(folder).repo.incomplete)  # type: ignore[union-attr]
     if dry_run:
         return plan.expected + incomplete
-    return _execute(scan, plan, dry_run=False, warnings=[]).freed_bytes
+    freed = _execute(scan, plan, dry_run=False, warnings=[]).freed_bytes
+    log.info("deleted %s/%s, freeing %d bytes", repo_type, repo_id, freed)
+    return freed
 
 
 def prune_incomplete(cache_dir: str | os.PathLike[str] | None = None, *, exclude_repos: Iterable[str] = frozenset(),
@@ -893,6 +895,8 @@ def prune_incomplete(cache_dir: str | os.PathLike[str] | None = None, *, exclude
                     continue
             result.removed.append(item.path)
             result.freed_bytes += item.size_bytes
+    if result.removed:
+        log.info("pruned %d incomplete file(s), freeing %d bytes", len(result.removed), result.freed_bytes)
     return result
 
 
@@ -992,6 +996,8 @@ def relocate_cache(src_home: str | os.PathLike[str], dst_home: str | os.PathLike
     anchor = _existing_ancestor(dst)
     method = "copy" if force_copy or _device(src) != _device(anchor) else "rename"
     _check_stop(stop_event)
+    log.info("relocating the Hugging Face cache from %s to %s (%s, %d files, %d bytes)",
+             src, dst, method, stats.files, stats.bytes)
     old_roots = [src, src_real]
     if method == "rename":
         try:
@@ -1014,6 +1020,7 @@ def relocate_cache(src_home: str | os.PathLike[str], dst_home: str | os.PathLike
                 moved_warnings.append(f"Moved, but absolute symlinks could not be rewritten: {exc}")
             if progress is not None:
                 progress(stats.bytes, stats.bytes, str(dst))
+            log.info("cache relocation complete (rename) at %s", dst)
             return RelocationResult(dst, stats.bytes, "rename", stats.files, relinked, moved_warnings)
     need = stats.bytes + max(stats.bytes // 100, _RELOCATION_MARGIN)
     free = _free_space(anchor)
@@ -1040,6 +1047,8 @@ def relocate_cache(src_home: str | os.PathLike[str], dst_home: str | os.PathLike
         _rmtree(src)
     except OSError as exc:
         warnings.append(f"Copied and verified, but the old cache at {src} could not be fully removed: {exc}")
+        log.warning("relocation left files behind at %s: %s", src, exc)
+    log.info("cache relocation complete (copy) at %s", dst)
     return RelocationResult(dst, stats.bytes, "copy", stats.files, relinked, warnings)
 
 

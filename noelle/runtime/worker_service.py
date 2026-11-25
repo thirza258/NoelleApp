@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import logging.handlers
 import os
 import queue
 import re
@@ -222,6 +221,7 @@ class Worker:
             position = len(self.pending)  # jobs ahead of this one, excluding the running job
             busy = self.current is not None
             self.pending[request_id] = job
+        log.info("queued %s %s (position %d, busy=%s)", cmd, request_id, position, busy)
         self.send(identity, request_id, Event.ACK, {"queued": busy or position > 0, "position": position})
         self.jobs.put(job)
 
@@ -267,8 +267,11 @@ class Worker:
                 jobs.append(self.current)
         for job in jobs:
             if target_id in (None, "all", job.request_id):
+                log.info("cancellation requested for %s %s", job.cmd, job.request_id)
                 job.stop_event.set()
                 stopped.append(job.request_id)
+        if target_id not in (None, "all") and not stopped:
+            log.debug("stop request for %s matched no active job", target_id)
         return stopped
 
     def hello_payload(self) -> dict[str, Any]:
@@ -355,6 +358,7 @@ class Worker:
                 self.pending.pop(job.request_id, None)
                 self.current = job
             started = time.perf_counter()
+            log.info("running %s %s", job.cmd, job.request_id)
             try:
                 if job.stop_event.is_set():
                     from noelle.runtime.errors import Cancelled
@@ -397,6 +401,7 @@ class Worker:
                 recovered=True)
             log.warning("%s: out of memory (%s)", job.cmd, exc)
         elif isinstance(exc, NoelleRuntimeError):
+            log.warning("%s %s failed (%s): %s", job.cmd, job.request_id, exc.code, exc.message)
             payload = error_payload(exc.code, exc.message, exc.hint, **getattr(exc, "extra", {}))
         else:
             log.error("%s failed:\n%s", job.cmd, "".join(traceback.format_exception(exc)))
@@ -910,16 +915,15 @@ _HANDLERS: dict[Command, Callable[[Worker, JobContext], None]] = {
 
 
 def configure_logging(name: str) -> None:
-    paths.logs_dir().mkdir(parents=True, exist_ok=True)
-    handler = logging.handlers.RotatingFileHandler(paths.logs_dir() / f"{name}.log", maxBytes=2_000_000,
-                                                   backupCount=3, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    stream = logging.StreamHandler(sys.stderr)
-    stream.setFormatter(logging.Formatter("[%(name)s] %(levelname)s %(message)s"))
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.addHandler(handler)
-    root.addHandler(stream)
+    """Child-process logging: a focused rotating file plus stderr for the supervisor."""
+    from noelle import logging_setup
+
+    if name == "worker":
+        logging_setup.configure_worker_logging()
+    elif name == "server":
+        logging_setup.configure_server_logging()
+    else:
+        logging_setup.configure_process_logging(name, console=True)
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:

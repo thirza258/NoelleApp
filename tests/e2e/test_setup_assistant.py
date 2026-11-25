@@ -60,6 +60,19 @@ def test_assistant_flow_without_downloads(ctx: Any, qtbot: Any, memory_keyring: 
     assert ctx.settings.get("setup.completed") is True and not should_run(ctx.settings)
 
 
+def test_assistant_skips_the_account_form_when_installer_saved_a_token(ctx: Any, qtbot: Any) -> None:
+    from noelle.app.services import hf_client
+    from noelle.app.ui.setup_assistant import SetupAssistant
+
+    hf_client.set_token("hf_importedByInstaller")
+    wizard = SetupAssistant(ctx)
+    qtbot.addWidget(wizard)
+    wizard.show()
+    assert wizard.currentId() == SetupAssistant.HARDWARE  # do not ask for the token again
+    account = wizard.page(SetupAssistant.ACCOUNT)
+    assert account.existing and "already saved" in account.status.text()
+
+
 def test_ticking_llama_cpp_routes_through_install_page(ctx: Any, qtbot: Any) -> None:
     from noelle.app.ui.setup_assistant import SetupAssistant
 

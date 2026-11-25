@@ -6,12 +6,18 @@ import re
 
 from noelle.runtime.protocol import ErrorCode
 
-_TOKEN_RE = re.compile(r"\bhf_[A-Za-z0-9]{20,}\b")
+_SECRET_PATTERNS = (
+    (re.compile(r"\bhf_[A-Za-z0-9]{20,}\b"), "hf_****"),
+    (re.compile(r"\bsk-(?:or-)?[A-Za-z0-9_-]{20,}\b"), "sk-****"),
+    (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{20,}"), "Bearer ****"),
+)
 
 
 def redact_secrets(text: str) -> str:
-    """Mask Hugging Face token-shaped strings before they reach logs, UI errors or crash reports."""
-    return _TOKEN_RE.sub("hf_****", text)
+    """Mask credential-shaped strings before they reach logs, UI errors or crash reports."""
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 class NoelleRuntimeError(Exception):

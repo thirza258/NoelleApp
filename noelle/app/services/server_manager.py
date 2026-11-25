@@ -6,6 +6,7 @@ The server talks to the same worker as the desktop UI; when the worker restarts
 
 from __future__ import annotations
 
+import logging
 import os
 from collections import deque
 
@@ -13,8 +14,10 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from noelle.config import Settings
 from noelle.runtime.client import build_worker_env, worker_command
+from noelle.runtime.protocol import parse_ready_port
 
 READY_PREFIX = "NOELLE_SERVER_READY"
+log = logging.getLogger("noelle.server-manager")
 
 
 class ServerManager(QObject):
@@ -83,10 +86,12 @@ class ServerManager(QObject):
         self.port = port
         self.last_error = None
         self._failed_to_start = False
+        log.info("starting the API server on 127.0.0.1:%d (worker %s)", port, endpoint)
         self._set_state("starting")
         process.start()
 
     def stop(self) -> None:
+        log.info("stopping the API server")
         if self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning:
             self._process.terminate()
             if not self._process.waitForFinished(4000):
@@ -110,6 +115,7 @@ class ServerManager(QObject):
             process.deleteLater()
         self.last_error = ("The API server process could not start. The runtime Python may be missing or "
                            "inaccessible." + (f" ({detail})" if detail else ""))
+        log.error("the API server process failed to start: %s", detail or "(no detail)")
         self._set_state("error")
 
     def _on_output(self) -> None:
@@ -122,10 +128,13 @@ class ServerManager(QObject):
             if not line:
                 continue
             if line.startswith(READY_PREFIX):
-                fields = dict(part.split("=", 1) for part in line.split()[1:] if "=" in part)
-                if fields.get("port"):
-                    self.port = int(fields["port"])
-                self._set_state("running")
+                port = parse_ready_port(line)
+                if port is None:
+                    log.warning("the API server sent an invalid ready line: %s", line[:200])
+                else:
+                    self.port = port
+                    log.info("API server is ready on port %s", self.port)
+                    self._set_state("running")
             self.log.append(line)
             self.log_line.emit(line)
 
@@ -140,12 +149,15 @@ class ServerManager(QObject):
                 self.last_error = f"Port {self.port} is already in use. Choose another port."
             else:
                 self.last_error = f"The API server exited (code {exit_code})."
+            log.warning("the API server exited unexpectedly (code %d): %s", exit_code, self.last_error)
             self._set_state("error")
         self._process = None
 
     def _on_runtime_state(self, state: str) -> None:
         if state == "ready" and self._state == "running" and self._endpoint != getattr(self.runtime, "endpoint", None):
+            log.info("the model runtime moved; restarting the API server to follow it")
             self.stop()
             self.start()
         elif state == "ready" and self._state == "stopped" and self.settings.get("server.autostart"):
+            log.info("runtime is ready and the API server is set to autostart")
             self.start()

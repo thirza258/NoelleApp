@@ -14,6 +14,7 @@ PAGES = [
     ("workspace", "Workspace", "cpu"),
     ("knowledge", "Knowledge", "book"),
     ("evaluate", "Evaluate", "activity"),
+    ("workflow", "Workflow", "layers"),
     ("compare", "Compare", "columns"),
     ("storage", "Storage", "database"),
     ("server", "API", "server"),

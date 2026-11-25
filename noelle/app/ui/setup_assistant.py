@@ -7,6 +7,7 @@ The token goes to the OS credential store, never to a file.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import threading
 from typing import Any
@@ -35,6 +36,7 @@ from noelle.runtime.preflight import MemoryBudget, assess_compatibility, format_
 
 STARTER_MODEL = "HuggingFaceTB/SmolLM2-360M-Instruct"
 STARTER_SIZE = "≈ 724 MB"
+log = logging.getLogger("noelle.setup")
 
 
 class WelcomePage(QWizardPage):
@@ -115,8 +117,10 @@ class AccountPage(QWizardPage):
         try:
             hf_client.set_token(token)
         except Exception as exc:
+            log.warning("the setup assistant could not save the Hugging Face token: %s", exc)
             self.status.setText(f"Could not save the token in the credential store: {exc}")
             return False
+        log.info("a Hugging Face token was saved from the setup assistant")
         return True
 
 
@@ -342,12 +346,17 @@ class SetupAssistant(QWizard):
         self.setPage(self.DOWNLOADS, self.downloads_page)
         self.setPage(self.INSTALL, InstallPage(ctx, self.downloads_page))
         self.setPage(self.FINISH, FinishPage())
-        self.setStartId(self.WELCOME)
+        # An installer can import the token before launching the app. In that case do not present
+        # the empty token form again: start at the hardware check. The token can be replaced in Settings.
+        self.setStartId(self.HARDWARE if hf_client.get_token() else self.WELCOME)
         self.finished.connect(self._on_finished)
 
     def _on_finished(self, result: int) -> None:
         if result == QWizard.DialogCode.Accepted:
+            log.info("setup assistant completed")
             self.ctx.settings.update({"setup.completed": True, "setup.version": __version__})
+        else:
+            log.info("setup assistant closed without completing")
 
 
 def should_run(settings: Any) -> bool:

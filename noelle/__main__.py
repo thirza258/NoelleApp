@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 if sys.platform == "win32":
     try:
@@ -94,12 +95,17 @@ def build_parser() -> argparse.ArgumentParser:
     lock_import.add_argument("file")
     lock_import.add_argument("--name", default=None)
     lock_import.add_argument("--python", default=None)
+
+    workflow_parser = sub.add_parser("workflow", help="run workflows, evaluate benchmarks and test generators")
+    from noelle.workflow.cli import add_workflow_arguments
+    add_workflow_arguments(workflow_parser)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "mcp", "eval", "analyze", "run",
+    commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "mcp", "eval", "analyze", "run", "workflow",
                 "-h", "--help"}
     if not argv or argv[0] not in commands:
         # Default to the UI; leave Qt's own arguments (e.g. -platform offscreen) for QApplication.
@@ -153,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
         from noelle.runtime import environment_manager
 
         return environment_manager.main(args)
+    if args.command == "workflow":
+        from noelle.workflow import cli as workflow_cli
+
+        return workflow_cli.main(args)
     parser.print_help()
     return 1
 
@@ -170,17 +180,53 @@ def _attach_windows_console() -> None:
         sys.stdin = open("CONIN$", encoding="utf-8")  # noqa: SIM115
 
 
+def _setup_log(message: str) -> None:
+    """Append a secret-free line to ``logs/setup.log`` (installer runs are otherwise invisible)."""
+    try:
+        import time
+
+        from noelle import paths
+
+        paths.logs_dir().mkdir(parents=True, exist_ok=True)
+        with (paths.logs_dir() / "setup.log").open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    except OSError:
+        pass
+
+
+def _report_import(message: str) -> None:
+    _setup_log(message)
+    if sys.stderr is not None:  # windowed frozen builds have no stderr
+        try:
+            print(message, file=sys.stderr)
+        except OSError:
+            pass
+
+
+def _read_handoff_token(file: Path) -> str:
+    """Decode the installer's UTF-8/UTF-16 text and strip BOMs/NULs/whitespace."""
+    raw = file.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = raw.decode("utf-16", errors="replace")
+    elif raw.startswith(b"\xef\xbb\xbf"):
+        text = raw.decode("utf-8-sig", errors="replace")
+    else:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("utf-16", errors="replace")
+    return text.replace("\ufeff", "").replace("\x00", "").strip()
+
+
 def import_hf_token(path: str) -> int:
     """Store a token handed over by an installer, then delete the hand-over file."""
-    from pathlib import Path
-
     from noelle.app.services import hf_client
 
     file = Path(path)
     try:
-        token = file.read_text(encoding="utf-8").strip()
+        token = _read_handoff_token(file)
     except OSError as exc:
-        print(f"Could not read {file}: {exc}", file=sys.stderr)
+        _report_import(f"Could not read the installer's token file {file}: {exc}")
         return 1
     finally:
         try:
@@ -188,13 +234,23 @@ def import_hf_token(path: str) -> int:
         except OSError:
             pass
     if not token:
+        _setup_log("The installer supplied an empty Hugging Face token; nothing to store.")
         return 0
-    try:
-        hf_client.set_token(token)
-    except Exception as exc:  # no keyring backend
-        print(f"Could not store the token in the credential store: {exc}", file=sys.stderr)
+    if any(ch.isspace() or ord(ch) < 32 for ch in token):
+        _report_import("The installer's Hugging Face token contains whitespace or control characters; "
+                       "it was not stored.")
         return 1
-    print("Hugging Face token saved to the system credential store.")
+    try:
+        hf_client.set_token(token)  # verifies the read-back
+    except Exception as exc:  # noqa: BLE001 - keyring/OS vault problems are reported to the installer
+        _report_import(f"Could not store the Hugging Face token in the OS credential store: {exc}")
+        return 1
+    _setup_log("Imported the installer's Hugging Face token into the OS credential store.")
+    if sys.stderr is not None:
+        try:
+            print("Hugging Face token saved to the system credential store.", file=sys.stderr)
+        except OSError:
+            pass
     return 0
 
 

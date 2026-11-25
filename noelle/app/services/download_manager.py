@@ -155,7 +155,9 @@ class DownloadManager(QObject):
               exclude: list[str] | None = None, revision: str | None = None) -> DownloadJob:
         existing = self.jobs.get(repo_id)
         if existing is not None and existing.active:
+            log.debug("download for %s is already active (%s)", repo_id, existing.status)
             return existing
+        log.info("queued download of %s (revision %s)", repo_id, revision or "main")
         job = DownloadJob(repo_id=repo_id, revision=revision, include=include, exclude=exclude,
                           summary=summary or (existing.summary if existing else None))
         self.jobs[repo_id] = job
@@ -164,19 +166,24 @@ class DownloadManager(QObject):
         return job
 
     def pause(self, repo_id: str) -> None:
+        log.info("pausing download of %s", repo_id)
         self._terminate(repo_id, "paused")
 
     def resume(self, repo_id: str) -> None:
         job = self.jobs.get(repo_id)
         if job is not None and job.status in ("paused", "error", "cancelled"):
+            log.info("resuming download of %s (was %s)", repo_id, job.status)
             self.start(repo_id, summary=job.summary, include=job.include, exclude=job.exclude, revision=job.revision)
 
     def cancel(self, repo_id: str) -> None:
+        log.info("cancelling download of %s", repo_id)
         self._terminate(repo_id, "cancelled")
 
     def shutdown(self) -> None:
         # Downloads are resumable and every completed file is already in the cache, so a
         # hard stop is safe and keeps quitting fast (terminate was given a short chance).
+        if self._processes:
+            log.info("stopping %d download child process(es) for shutdown", len(self._processes))
         for repo_id in list(self._processes):
             self._terminate(repo_id, "paused", force=True)
         for process in list(self._processes.values()):
@@ -192,6 +199,7 @@ class DownloadManager(QObject):
         job = self.jobs.get(repo_id)
         if job is None:
             return
+        log.debug("terminating the download child for %s (target status %s, force=%s)", repo_id, status, force)
         process = self._processes.get(repo_id)
         running = False
         if process is not None:
@@ -283,6 +291,8 @@ class DownloadManager(QObject):
         job.started_at = time.time()
         job._last_time = time.monotonic()
         job._last_bytes = 0
+        log.info("starting download child for %s (mode=%s, authenticated=%s)",
+                 repo_id, self.settings.get("storage.download_mode"), bool(token))
         self.job_updated.emit(repo_id)
         process.start()
 
@@ -346,6 +356,8 @@ class DownloadManager(QObject):
                 job.download_bytes = _positive_int(event.get("download_bytes")) or 0
                 job.files = _parse_files(event.get("files"))
                 job.status = "downloading"
+                log.info("download plan for %s: %d file(s), %d bytes to download",
+                         repo_id, len(job.files), job.download_bytes)
             elif kind == "progress":
                 entry = job.files.get(_file_name(event.get("file")) or "")
                 if entry is not None:
@@ -370,19 +382,26 @@ class DownloadManager(QObject):
                 job.retries += 1
                 job.log.append(f"retry {_text(event.get('attempt'))} for {_text(event.get('file'))}: "
                                f"{_text(event.get('error'))}")
+                log.warning("%s: retry %s for %s: %s", repo_id, _text(event.get("attempt")),
+                            _text(event.get("file")), _text(event.get("error")))
             elif kind == "file_error":
                 job.log.append(f"{_text(event.get('file'))}: {_text(event.get('message'))}")
+                log.warning("%s: file failed: %s: %s", repo_id, _text(event.get("file")),
+                            _text(event.get("message")))
             elif kind == "done":
                 job.path = _text(event.get("path")) or job.path
                 job.commit = _text(event.get("commit")) or job.commit
                 job.status = "done"
                 job.finished_at = time.time()
+                log.info("download of %s completed (%d bytes, %d file(s))",
+                         repo_id, job.total_bytes, len(job.files))
                 self._register(job, event)
             else:  # error
                 job.error = _text(event.get("message")) or "The download failed."
                 job.error_code = _text(event.get("code"))
                 job.status = "error"
                 job.finished_at = time.time()
+                log.warning("download of %s failed (%s): %s", repo_id, job.error_code, job.error)
         except (OSError, ValueError, TypeError) as exc:
             # A malformed/unexpected line is a diagnostic, not a crash in a Qt slot.
             log.warning("Ignoring malformed download event for %s: %s", repo_id, exc)
@@ -463,6 +482,7 @@ class DownloadManager(QObject):
                 self.registry.add_adapter(AdapterRecord(job.repo_id, base, job.path, record.size_bytes))
             else:
                 self.registry.upsert_model(record)
+            log.info("registered %s in the library (%s, %d bytes)", job.repo_id, record.precision, record.size_bytes)
         except Exception:  # noqa: BLE001 - the files are downloaded; a registry failure must be reported, not crash
             log.exception("The download of %s finished but could not be added to the library", job.repo_id)
             job.log.append("Download finished, but saving it to the library failed. Run 'Rescan' in Storage.")
@@ -494,6 +514,7 @@ class DownloadManager(QObject):
                 job.error_code = "PROCESS_EXIT"
         if job is not None:
             job.speed_bps = 0.0
+            log.info("download child for %s exited (code %d), job status %s", repo_id, exit_code, job.status)
             self.job_updated.emit(repo_id)
             if not intentional:
                 self._notify_finished(repo_id, job)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from PySide6.QtCore import QTimer
@@ -14,6 +15,8 @@ from noelle.app.context import AppContext
 from noelle.app.ui.navigation_bar import NavigationBar
 from noelle.app.ui.widgets.common import Banner, Toast
 from noelle.app.ui.widgets.vram_meter import TelemetryBar
+
+log = logging.getLogger("noelle.ui")
 
 
 class MainWindow(QMainWindow):
@@ -70,6 +73,7 @@ class MainWindow(QMainWindow):
         from noelle.app.ui.pages.model_detail_page import ModelDetailPage
         from noelle.app.ui.pages.server_page import ServerPage
         from noelle.app.ui.pages.storage_page import StoragePage
+        from noelle.app.ui.pages.workflow_page import WorkflowPage
 
         self.pages: dict[str, QWidget] = {
             "discover": DiscoveryPage(ctx),
@@ -77,6 +81,7 @@ class MainWindow(QMainWindow):
             "workspace": ModelDetailPage(ctx),
             "knowledge": KnowledgePage(ctx),
             "evaluate": EvaluatePage(ctx),
+            "workflow": WorkflowPage(ctx),
             "compare": ComparativePage(ctx),
             "storage": StoragePage(ctx),
             "server": ServerPage(ctx),
@@ -209,11 +214,13 @@ class MainWindow(QMainWindow):
             self._banner_host.show()
 
     def _on_worker_crashed(self, exit_code: int, diagnosis: str) -> None:
+        log.error("runtime crash reported to the user (code %s): %s", exit_code, diagnosis)
         self.crash_banner.set_text(f"<b>The model runtime stopped unexpectedly.</b> {diagnosis} "
                                    "Your work in the app is safe — restart the runtime to continue.")
         self._banner_host.show()
 
     def _restart_runtime(self) -> None:
+        log.info("restarting the model runtime from the UI")
         self._banner_host.hide()
         self.ctx.runtime.restart()
 
@@ -252,6 +259,8 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
+        log.info("shutting down: %d active download(s), server=%s, runtime=%s",
+                 len(active), self.ctx.server.state, self.ctx.runtime.state)
         for page in self.pages.values():
             shutdown = getattr(page, "shutdown", None)
             if callable(shutdown):
@@ -260,6 +269,7 @@ class MainWindow(QMainWindow):
         self.ctx.server.stop()
         self.ctx.hardware.stop()
         self.ctx.runtime.stop()
+        log.info("shutdown complete")
         event.accept()
         if getattr(self, "_relaunch", False):
             from PySide6.QtCore import QProcess

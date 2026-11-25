@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -53,6 +54,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.setDocumentMode(True)
         tabs.addTab(self._account_tab(), "Account")
+        tabs.addTab(self._ai_providers_tab(), "AI Providers")
         tabs.addTab(self._appearance_tab(), "Appearance")
         tabs.addTab(self._runtime_tab(), "Runtime")
         tabs.addTab(self._environments_tab(), "Environments")
@@ -100,6 +102,73 @@ class SettingsDialog(QDialog):
         layout.addWidget(create)
         layout.addStretch(1)
         return page
+
+    def _ai_providers_tab(self) -> QWidget:
+        from noelle.providers.credentials import get_api_key
+
+        page, layout = self._page()
+        layout.addWidget(label("AI Cloud Providers & Gateways", "h3"))
+        layout.addWidget(label("Connect OpenAI or OpenRouter to compose and benchmark hybrid workflows. "
+                               "Keys are stored securely in your OS credential vault and never logged.", "muted", wrap=True))
+
+        # OpenAI Section
+        layout.addWidget(label("OpenAI Direct API", "strong"))
+        row_oa = QHBoxLayout()
+        self.openai_token = QLineEdit()
+        self.openai_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.openai_token.setPlaceholderText("sk-…  (leave empty to keep current)")
+        row_oa.addWidget(self.openai_token, 1)
+        save_oa = button("Save", "check")
+        save_oa.clicked.connect(lambda: self._save_key("openai", self.openai_token, self.openai_status))
+        row_oa.addWidget(save_oa)
+        del_oa = button("Remove", "trash", "danger")
+        del_oa.clicked.connect(lambda: self._delete_key("openai", self.openai_token, self.openai_status))
+        row_oa.addWidget(del_oa)
+        layout.addLayout(row_oa)
+
+        has_oa = bool(get_api_key("openai"))
+        self.openai_status = label("● Connected" if has_oa else "○ No API key configured", "faint")
+        layout.addWidget(self.openai_status)
+
+        layout.addSpacing(10)
+
+        # OpenRouter Section
+        layout.addWidget(label("OpenRouter Gateway", "strong"))
+        row_or = QHBoxLayout()
+        self.openrouter_token = QLineEdit()
+        self.openrouter_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.openrouter_token.setPlaceholderText("sk-or-…  (leave empty to keep current)")
+        row_or.addWidget(self.openrouter_token, 1)
+        save_or = button("Save", "check")
+        save_or.clicked.connect(lambda: self._save_key("openrouter", self.openrouter_token, self.openrouter_status))
+        row_or.addWidget(save_or)
+        del_or = button("Remove", "trash", "danger")
+        del_or.clicked.connect(lambda: self._delete_key("openrouter", self.openrouter_token, self.openrouter_status))
+        row_or.addWidget(del_or)
+        layout.addLayout(row_or)
+
+        has_or = bool(get_api_key("openrouter"))
+        self.openrouter_status = label("● Connected (100+ models)" if has_or else "○ No API key configured", "faint")
+        layout.addWidget(self.openrouter_status)
+
+        layout.addStretch(1)
+        return page
+
+    def _save_key(self, provider_id: str, input_widget: QLineEdit, status_label: QLabel) -> None:
+        from noelle.providers.credentials import set_api_key
+        key = input_widget.text().strip()
+        if key:
+            set_api_key(provider_id, key)
+            input_widget.clear()
+            status_label.setText("● Connected")
+            QMessageBox.information(self, "Key Saved", f"{provider_id.upper()} API key stored securely in OS vault.")
+
+    def _delete_key(self, provider_id: str, input_widget: QLineEdit, status_label: QLabel) -> None:
+        from noelle.providers.credentials import delete_api_key
+        delete_api_key(provider_id)
+        input_widget.clear()
+        status_label.setText("○ No API key configured")
+        QMessageBox.information(self, "Key Removed", f"{provider_id.upper()} API key removed from vault.")
 
     def _appearance_tab(self) -> QWidget:
         page, layout = self._page()

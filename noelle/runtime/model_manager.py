@@ -255,8 +255,12 @@ class ModelManager:
                 f"is usable on {device} after the {int(self.headroom * 100)}% safety headroom.",
                 hint="Quantize it to 4-bit, pick a smaller model, or use 'Load anyway'.")
         evicted = self.make_room(estimate, budget.usable_bytes, keep={key})
+        if evicted:
+            log.info("evicted %d model(s) to make room for %s: %s", len(evicted), spec.model_id, evicted)
         if evicted and on_status:
             on_status(f"Evicted {len(evicted)} model(s) to free memory")
+        log.info("loading %s (task=%s precision=%s device=%s estimate=%s)",
+                 spec.model_id, spec.task, spec.precision, device, format_bytes(estimate))
         if on_status:
             on_status(f"Loading {spec.model_id} on {device} (~{format_bytes(estimate)})")
         before = self._allocated(device)
@@ -282,6 +286,8 @@ class ModelManager:
                              estimated_bytes=estimate, load_ms=load_ms)
         with self._lock:
             self._models[key] = loaded
+        log.info("loaded %s in %.0f ms using %s (%s)", spec.model_id, load_ms, engine_name,
+                 format_bytes(loaded.memory_bytes))
         self._changed()
         return loaded
 
@@ -306,6 +312,7 @@ class ModelManager:
             loaded = self._models.pop(key, None)
         if loaded is None:
             return False
+        log.info("unloading %s (%s on %s)", loaded.spec.model_id, loaded.engine_name, loaded.device)
         device = loaded.device
         try:
             release = getattr(loaded.engine, "release", None)

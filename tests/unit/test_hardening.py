@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -62,6 +63,21 @@ def test_unhandled_slot_exceptions_are_logged(monkeypatch: pytest.MonkeyPatch,
     assert record.exc_info is not None and "slot blew up" in str(record.exc_info[1])
 
 
+def test_stale_installer_token_handoffs_are_removed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from noelle.app import main as app_main
+
+    appdata = tmp_path / "appdata"
+    folder = appdata / "Noelle"
+    folder.mkdir(parents=True)
+    stale = folder / "pending-hf-token-20260101120000.txt"
+    stale.write_text("hf_secret", encoding="utf-8")
+    keep = folder / "notes.txt"
+    keep.write_text("keep me", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    app_main._clean_stale_token_handoffs()
+    assert not stale.exists() and keep.exists()
+
+
 def test_unwritable_data_folder_is_reported_not_crashed(monkeypatch: pytest.MonkeyPatch) -> None:
     from noelle.app import main as app_main
 
@@ -71,6 +87,78 @@ def test_unwritable_data_folder_is_reported_not_crashed(monkeypatch: pytest.Monk
     monkeypatch.setattr(app_main.paths, "ensure_dirs", deny)
     problem = app_main._prepare_storage()
     assert isinstance(problem, PermissionError)
+
+
+def test_import_hf_token_accepts_utf16_handoff(tmp_path: Path) -> None:
+    from noelle.__main__ import import_hf_token
+    from noelle.app.services import hf_client
+
+    handoff = tmp_path / "token.txt"
+    handoff.write_bytes(b"\xff\xfe" + "hf_fromUtf16".encode("utf-16-le"))
+    assert import_hf_token(str(handoff)) == 0
+    assert hf_client.get_token() == "hf_fromUtf16"
+    assert not handoff.exists()
+
+
+def test_import_hf_token_rejects_embedded_whitespace(tmp_path: Path) -> None:
+    from noelle.__main__ import import_hf_token
+    from noelle.app.services import hf_client
+
+    hf_client.clear_token()
+    handoff = tmp_path / "token.txt"
+    handoff.write_text("hf_bad token\n", encoding="utf-8")
+    assert import_hf_token(str(handoff)) == 1
+    assert hf_client.get_token() is None and not handoff.exists()
+
+
+# =============================================================== logging
+def test_desktop_logging_creates_component_files_and_redacts() -> None:
+    from noelle import logging_setup, paths
+
+    token = "hf_" + "b" * 34
+    logging_setup.configure_desktop_logging()
+    try:
+        logging.getLogger("noelle.downloads").info("downloading with %s", token)
+        logging.getLogger("noelle.credentials").warning("token stored")
+        try:
+            raise RuntimeError(f"request failed for {token}")
+        except RuntimeError:
+            logging.getLogger("noelle.downloads").exception("download failed")
+        logs = paths.logs_dir()
+        assert (logs / "downloads.log").exists()
+        assert (logs / "credentials.log").exists()
+        downloads = (logs / "downloads.log").read_text(encoding="utf-8")
+        credentials = (logs / "credentials.log").read_text(encoding="utf-8")
+        assert "hf_****" in downloads and token not in downloads  # message + traceback redacted
+        assert "token stored" in credentials
+    finally:
+        logging_setup.reset_logging()
+
+
+def test_process_logging_is_idempotent(tmp_path: Path) -> None:
+    from noelle import logging_setup
+
+    logging_setup.configure_process_logging("unit-test", console=False)
+    try:
+        logging_setup.configure_process_logging("unit-test", console=False)  # reconfigure must not duplicate
+        logging.getLogger("noelle.worker").info("one line")
+        content = (logging_setup.paths.logs_dir() / "unit-test.log").read_text(encoding="utf-8")
+        assert content.count("one line") == 1
+    finally:
+        logging_setup.reset_logging()
+
+
+def test_verbose_logging_adds_debug_file() -> None:
+    from noelle import logging_setup, paths
+
+    os.environ["NOELLE_LOG_DEBUG"] = "1"
+    try:
+        logging_setup.configure_desktop_logging()
+        logging.getLogger("noelle.ui").debug("verbose detail")
+        assert (paths.logs_dir() / "debug.log").read_text(encoding="utf-8").count("verbose detail") == 1
+    finally:
+        os.environ.pop("NOELLE_LOG_DEBUG", None)
+        logging_setup.reset_logging()
 
 
 # =============================================================== registry
@@ -95,9 +183,53 @@ def test_tokens_are_redacted_from_download_events(capsys: pytest.CaptureFixture[
     token = "hf_" + "a" * 34
     assert redact_secrets(f"failed with {token}") == "failed with hf_****"
     assert redact_secrets("hf_short") == "hf_short"
+    assert "sk-****" in redact_secrets("key sk-" + "x" * 30)
+    assert "Bearer ****" in redact_secrets("Authorization: Bearer " + "y" * 30)
+    assert redact_secrets("a bearer of good news") == "a bearer of good news"
     downloader.emit({"type": "error", "message": f"auth failed for {token}"})
     out = capsys.readouterr().out
     assert token not in out and "hf_****" in out
+
+
+def test_credential_store_falls_back_to_the_platform_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    import keyring
+    import keyring.core
+    from keyring.backends.fail import Keyring as FailKeyring
+
+    from noelle.app.services import hf_client
+
+    hf_client._reset_backend_cache()
+    monkeypatch.setattr(keyring, "get_keyring", lambda: FailKeyring())
+    loaded: list[str] = []
+    installed: list[Any] = []
+    fake = object()
+
+    def load(name: str) -> Any:
+        loaded.append(name)
+        return fake
+
+    monkeypatch.setattr(keyring.core, "load_keyring", load)
+    monkeypatch.setattr(keyring.core, "set_keyring", installed.append)
+    try:
+        hf_client._ensure_backend()
+    finally:
+        hf_client._reset_backend_cache()
+    assert installed == [fake] and loaded  # the explicit platform backend wins over "fail"
+
+
+def test_set_token_fails_when_the_store_silently_drops_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    import keyring
+
+    from noelle.app.services import hf_client
+
+    hf_client._reset_backend_cache()
+    monkeypatch.setattr(hf_client, "_ensure_backend", lambda: None)
+    monkeypatch.setattr(keyring, "set_password", lambda *_a: None)
+    monkeypatch.setattr(keyring, "get_password", lambda *_a: None)
+    with pytest.raises(RuntimeError, match="did not keep"):
+        hf_client.set_token("hf_willVanish")
+    with pytest.raises(ValueError, match="empty"):
+        hf_client.set_token("   ")
 
 
 # =============================================================== download integrity

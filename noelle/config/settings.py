@@ -59,6 +59,7 @@ class Settings:
                 self._overrides = data if isinstance(data, dict) else {}
             except FileNotFoundError:
                 self._overrides = {}
+                log.debug("no settings file at %s yet", self._path)
             except json.JSONDecodeError as exc:
                 # A corrupt settings file must never stop the app from starting, but it must be
                 # visible in the logs (and is preserved until the next successful save).
@@ -128,6 +129,7 @@ class Settings:
                 os.fsync(fh.fileno())  # durable before the atomic rename: a crash cannot leave a torn file
             os.replace(tmp, self._path)
             _sync_directory(self._path.parent)
+            log.debug("saved %d setting override(s) to %s", len(self._overrides), self._path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise

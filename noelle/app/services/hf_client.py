@@ -11,7 +11,10 @@
 
 from __future__ import annotations
 
+import logging
+import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
@@ -21,6 +24,8 @@ from noelle.runtime.preflight import params_from_safetensors, parse_param_count
 
 KEYRING_SERVICE = "noelle-desktop-studio"
 KEYRING_USER = "huggingface-token"
+log = logging.getLogger("noelle.credentials")
+hub_log = logging.getLogger("noelle.hub")
 
 LIST_EXPAND = ["author", "downloads", "likes", "pipeline_tag", "library_name", "tags", "safetensors",
                "trendingScore", "lastModified", "createdAt", "gated"]
@@ -30,28 +35,106 @@ _QUANT_TAGS = {"gguf", "awq", "gptq", "4-bit", "8-bit", "bitsandbytes", "mlx", "
 
 
 # ----------------------------------------------------------------- token store
+_backend_lock = threading.Lock()
+_backend_ready = False
+_backend_retry_at = 0.0
+_BACKEND_RETRY_S = 30.0
+
+
+def _backend_candidates() -> tuple[str, ...]:
+    if sys.platform == "win32":
+        return ("keyring.backends.Windows.WinVaultKeyring",)
+    if sys.platform == "darwin":
+        return ("keyring.backends.macOS.Keyring",)
+    return ("keyring.backends.SecretService.Keyring", "keyring.backends.kwallet.DBusKeyring")
+
+
+def _ensure_backend() -> None:
+    """Use the OS vault even when keyring's plugin discovery did not run (some frozen/headless launches).
+
+    The module-level ``keyring.get_password``/``set_password`` wrappers are deliberately kept: the
+    resolved backend is installed with ``set_keyring``, so callers and tests see normal keyring APIs.
+    """
+    global _backend_ready, _backend_retry_at
+    with _backend_lock:
+        if _backend_ready or time.monotonic() < _backend_retry_at:
+            return
+        _backend_retry_at = time.monotonic() + _BACKEND_RETRY_S
+        try:
+            import keyring
+            import keyring.core
+            from keyring.backends.fail import Keyring as FailKeyring
+            from keyring.backends.null import Keyring as NullKeyring
+
+            current = keyring.get_keyring()
+        except Exception as exc:  # noqa: BLE001 - keyring itself is broken; callers report the real error
+            log.warning("Could not inspect the OS credential store: %s", exc)
+            return
+        if not isinstance(current, (FailKeyring, NullKeyring)):
+            _backend_ready = True
+            return
+        for name in _backend_candidates():
+            try:
+                backend = keyring.core.load_keyring(name)
+            except Exception as exc:  # noqa: BLE001 - try the next platform backend
+                log.debug("Credential backend %s is unavailable: %s", name, exc)
+                continue
+            keyring.core.set_keyring(backend)
+            _backend_ready = True
+            log.info("Using the OS credential store (%s).", name)
+            return
+        log.warning("No usable OS credential store was found; Hugging Face tokens cannot be saved.")
+
+
+def _reset_backend_cache() -> None:
+    """Only for tests/diagnostics after the environment changes."""
+    global _backend_ready, _backend_retry_at
+    with _backend_lock:
+        _backend_ready = False
+        _backend_retry_at = 0.0
+
+
 def get_token() -> str | None:
     try:
+        _ensure_backend()
         import keyring
 
         return keyring.get_password(KEYRING_SERVICE, KEYRING_USER) or None
-    except Exception:  # no backend available
+    except Exception as exc:  # noqa: BLE001 - discovery runs in contexts where no vault exists
+        log.warning("Could not read the Hugging Face token from the credential store: %s", exc)
         return None
 
 
 def set_token(token: str) -> None:
+    """Store the token and verify it can be read back (a null backend must not look like success)."""
+    token = token.strip()
+    if not token:
+        raise ValueError("The access token is empty.")
+    _ensure_backend()
     import keyring
 
-    keyring.set_password(KEYRING_SERVICE, KEYRING_USER, token.strip())
+    try:
+        keyring.set_password(KEYRING_SERVICE, KEYRING_USER, token)
+        stored = keyring.get_password(KEYRING_SERVICE, KEYRING_USER)
+    except Exception:
+        _reset_backend_cache()
+        raise
+    if stored != token:
+        _reset_backend_cache()
+        raise RuntimeError(
+            "The operating system credential store did not keep the token. "
+            "On Linux, make sure a Secret Service (GNOME Keyring/KWallet) is running; "
+            "on Windows/macOS, check that the app is allowed to use the credential store.")
 
 
 def clear_token() -> None:
     try:
+        _ensure_backend()
         import keyring
 
         keyring.delete_password(KEYRING_SERVICE, KEYRING_USER)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - deleting a missing credential is not an error
+        log.debug("Could not remove the Hugging Face token: %s", exc)
 
 
 # ------------------------------------------------------------------ data model
@@ -240,14 +323,21 @@ class ModelPager:
                     response = session.get(url, headers=headers, timeout=20)
                 hf_raise_for_status(response)
                 self._next_urls[tag] = response.links.get("next", {}).get("url")
-                for item in response.json():
+                items = response.json()
+                skipped = 0
+                new_items = 0
+                for item in items:
                     try:
                         summary = ModelSummary.from_info(ModelInfo(**item))
                     except Exception:
+                        skipped += 1
                         continue
                     if summary.id not in self._seen:
                         self._seen.add(summary.id)
                         results.append(summary)
+                        new_items += 1
+                hub_log.debug("Hub page for %s returned %d item(s), %d new, %d malformed",
+                              tag or "all", len(items), new_items, skipped)
             if all(not self._next_urls.get(tag) for tag in streams):
                 self._exhausted = True
             if len(streams) > 1:  # merge several pipeline tags by the active sort key
@@ -299,7 +389,12 @@ class HFClient:
         return items[:count]
 
     def model_info(self, repo_id: str) -> ModelSummary:
-        info = self._api().model_info(repo_id, files_metadata=True)
+        hub_log.debug("Hub model_info: %s", repo_id)
+        try:
+            info = self._api().model_info(repo_id, files_metadata=True)
+        except Exception as exc:  # noqa: BLE001 - log the classification, re-raise for the caller's UI
+            hub_log.warning("Hub model_info failed for %s: %s: %s", repo_id, type(exc).__name__, exc)
+            raise
         return ModelSummary.from_info(info)
 
     def fetch_file_text(self, repo_id: str, filename: str, max_bytes: int = 2_000_000) -> str | None:
@@ -312,6 +407,7 @@ class HFClient:
         from huggingface_hub.utils import build_hf_headers, get_session
 
         url = hf_hub_url(repo_id, filename, endpoint=self.endpoint)
+        hub_log.debug("Hub file request: %s/%s (max %d bytes)", repo_id, filename, max_bytes)
         data = bytearray()
         try:
             # Stream and stop at max_bytes: a repository file can be arbitrarily large, and
@@ -319,12 +415,14 @@ class HFClient:
             with get_session().stream("GET", url, headers=build_hf_headers(token=self.token), timeout=20,
                                       follow_redirects=True) as response:
                 if response.status_code != 200:
+                    hub_log.debug("Hub file %s/%s returned HTTP %d", repo_id, filename, response.status_code)
                     return None
                 for chunk in response.iter_bytes():
                     data.extend(chunk[: max_bytes - len(data)])
                     if len(data) >= max_bytes:
                         break
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - optional metadata must not abort discovery
+            hub_log.warning("Hub file %s/%s failed: %s: %s", repo_id, filename, type(exc).__name__, exc)
             return None
         return bytes(data).decode("utf-8", errors="replace")
 
@@ -345,4 +443,6 @@ class HFClient:
     def whoami(self, token: str | None = None) -> dict[str, Any]:
         from huggingface_hub import HfApi
 
-        return HfApi(endpoint=self.endpoint).whoami(token=token or self.token)
+        info = HfApi(endpoint=self.endpoint).whoami(token=token or self.token)
+        hub_log.debug("Hub whoami succeeded for %s", info.get("name") or info.get("fullname") or "(unknown)")
+        return info

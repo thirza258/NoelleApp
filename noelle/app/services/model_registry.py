@@ -331,6 +331,7 @@ class ModelRegistry:
             self._conn.commit()
             row = self._conn.execute("SELECT * FROM models WHERE repo_id=? AND precision=? AND source=?",
                                      (record.repo_id, record.precision, record.source)).fetchone()
+        log.info("registry: stored %s (%s, %s)", record.repo_id, record.precision, record.source)
         return _model_from_row(row)
 
     def get_model(self, repo_id: str, precision: str | None = None, source: str | None = None) -> ModelRecord | None:
@@ -397,6 +398,7 @@ class ModelRegistry:
         with self._lock:
             cur = self._conn.execute(sql, tuple(params))
             self._conn.commit()
+            log.info("registry: removed %d record(s) for %s", cur.rowcount, repo_id)
             return cur.rowcount
 
     def prune_missing(self) -> list[str]:
@@ -404,6 +406,7 @@ class ModelRegistry:
         removed = []
         for record in self.list_models():
             if record.local_path and not Path(record.local_path).exists():
+                log.info("registry: pruning %s because %s no longer exists", record.repo_id, record.local_path)
                 self.delete_model(record.repo_id, record.precision, record.source)
                 removed.append(record.repo_id)
         return removed

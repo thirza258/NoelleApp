@@ -85,25 +85,64 @@ begin
   end;
 end;
 
+function TryTokenHandoff(const Token, TokenFile: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := False;
+  ResultCode := -1;
+  if not SaveStringToFile(TokenFile, Token, False) then
+  begin
+    Log('Could not write the token hand-off file: ' + TokenFile);
+    exit;
+  end;
+  try
+    Result := ExecAsOriginalUser(ExpandConstant('{app}\Noelle.exe'),
+                'setup --import-hf-token "' + TokenFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+              and (ResultCode = 0);
+    Log(Format('Hugging Face token import from %s exited with code %d', [TokenFile, ResultCode]));
+  finally
+    DeleteFile(TokenFile);
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Token, TokenFile: String;
-  ResultCode: Integer;
+  Saved: Boolean;
 begin
   if CurStep = ssPostInstall then
   begin
     Token := Trim(TokenPage.Values[0]);
     if Token <> '' then
     begin
-      TokenFile := ExpandConstant('{tmp}\hf_token.txt');
-      if SaveStringToFile(TokenFile, Token, False) then
+      if IsAdminInstallMode then
       begin
-        if not ExecAsOriginalUser(ExpandConstant('{app}\Noelle.exe'),
-             'setup --import-hf-token "' + TokenFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
-           or (ResultCode <> 0) then
-          MsgBox('Noelle could not save the token. You can add it later in Settings.', mbInformation, MB_OK);
-        DeleteFile(TokenFile);
+        // Elevation can make Setup's {tmp} unreadable to the original user. Use that user's
+        // roaming profile instead; Noelle deletes it immediately after reading it.
+        TokenFile := ExpandConstant('{userappdata}\Noelle\pending-hf-token-' +
+                                     GetDateTimeString('yyyymmddhhnnss', #0, #0) + '.txt');
+        ForceDirectories(ExtractFileDir(TokenFile));
+      end
+      else
+        TokenFile := ExpandConstant('{tmp}\hf_token.txt');  // private per-user temp, auto-cleaned by Setup
+      Saved := TryTokenHandoff(Token, TokenFile);
+      if not Saved then
+      begin
+        // Fall back to the other location for unusual profiles or locked-down ACLs.
+        if IsAdminInstallMode then
+          TokenFile := ExpandConstant('{tmp}\hf_token.txt')
+        else
+        begin
+          TokenFile := ExpandConstant('{userappdata}\Noelle\pending-hf-token-' +
+                                       GetDateTimeString('yyyymmddhhnnss', #0, #0) + '.txt');
+          ForceDirectories(ExtractFileDir(TokenFile));
+        end;
+        Saved := TryTokenHandoff(Token, TokenFile);
       end;
+      if not Saved then
+        MsgBox('Noelle could not save the Hugging Face token. Open Noelle and paste it in ' +
+               'Settings › Account, or run the installer again.', mbInformation, MB_OK);
     end;
   end;
 end;
