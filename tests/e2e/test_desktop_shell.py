@@ -117,8 +117,6 @@ def test_compatibility_badges_follow_budget(window: Any) -> None:
 
 
 def test_filter_by_supported_spec(window: Any, qtbot: Any) -> None:
-    from noelle.runtime.preflight import GB, MemoryBudget
-
     page = window.pages["discover"]
     qtbot.waitUntil(lambda: len(page.grid.cards) >= 30, timeout=5000)
 
