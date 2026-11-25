@@ -21,6 +21,13 @@ def repo_folder(repo_id: str, cache_dir: str | Path | None = None, repo_type: st
     return cache / f"{repo_type}s--{repo_id.replace('/', '--')}"
 
 
+def _has_entries(path: Path) -> bool:
+    try:
+        return path.is_dir() and any(path.iterdir())
+    except OSError:  # deleted between the listing and the check, or permission denied
+        return False
+
+
 def cached_snapshot_path(repo_id: str, revision: str | None = None, cache_dir: str | Path | None = None,
                          repo_type: str = "model") -> Path | None:
     folder = repo_folder(repo_id, cache_dir, repo_type)
@@ -34,22 +41,31 @@ def cached_snapshot_path(repo_id: str, revision: str | None = None, cache_dir: s
     else:
         ref = folder / "refs" / rev
         if ref.is_file():
-            commit = ref.read_text(encoding="utf-8").strip() or None
+            try:
+                commit = ref.read_text(encoding="utf-8").strip() or None
+            except OSError:
+                return None
     if commit:
         snap = snapshots / commit
-        if snap.is_dir() and any(snap.iterdir()):
+        if _has_entries(snap):
             return snap
     if revision not in (None, "main"):
         return None
-    candidates = [p for p in snapshots.iterdir() if p.is_dir() and any(p.iterdir())]
-    if not candidates:
+    try:
+        candidates = [p for p in snapshots.iterdir() if _has_entries(p)]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    except OSError:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def is_downloaded(repo_id: str, revision: str | None = None, cache_dir: str | Path | None = None) -> bool:
     snap = cached_snapshot_path(repo_id, revision, cache_dir)
     if snap is None:
         return False
-    return any((snap / name).exists() for name in ("config.json", "model_index.json", "modules.json",
-                                                    "adapter_config.json")) or any(snap.glob("*.gguf"))
+    try:
+        return any((snap / name).exists() for name in ("config.json", "model_index.json", "modules.json",
+                                                        "adapter_config.json")) or any(snap.glob("*.gguf"))
+    except OSError:
+        return False

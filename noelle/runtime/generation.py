@@ -15,6 +15,7 @@ prompt/completion token counts and peak accelerator memory.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -552,11 +553,25 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _tail_text(path: Path, limit: int) -> str:
+    """Last ``limit`` bytes of a log file without loading the whole file."""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(fh.tell() - limit, 0))
+            return fh.read(limit).decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
 def _llama_server_help(binary: str) -> str:
     import subprocess
 
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     try:
-        result = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30)
+        result = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30, **kwargs)
     except (OSError, subprocess.SubprocessError) as exc:
         raise LoadFailed(f"Could not start llama-server: {exc}") from exc
     return (result.stdout or "") + (result.stderr or "")
@@ -606,13 +621,16 @@ class LlamaServerEngine:
         log_path = paths.logs_dir() / "llama-server.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log = open(log_path, "ab")  # noqa: SIM115 - owned by the child process
-        process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+        kwargs: dict[str, Any] = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, **kwargs)
         log.close()
         engine = cls(process, port, n_ctx, device, api_key)
         deadline = time.monotonic() + startup_timeout
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                tail = log_path.read_bytes()[-600:].decode("utf-8", "replace").strip().splitlines()
+                tail = _tail_text(log_path, 600).strip().splitlines()
                 raise LoadFailed(f"llama-server exited (code {process.returncode}): {tail[-1] if tail else 'no output'}")
             try:
                 status, _ = engine._call("GET", "/health", timeout=2)
@@ -729,8 +747,12 @@ class LlamaServerEngine:
             process.terminate()
             try:
                 process.wait(timeout=10)
-            except Exception:
+            except Exception:  # noqa: BLE001 - escalate, then always reap so no zombie is left behind
                 process.kill()
+                try:
+                    process.wait(timeout=5)
+                except Exception:  # noqa: BLE001 - the OS owns it now; nothing else can be done here
+                    pass
 
 
 # ---------------------------------------------------------------------------

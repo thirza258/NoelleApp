@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
 from noelle.runtime.protocol import ErrorCode
+
+_TOKEN_RE = re.compile(r"\bhf_[A-Za-z0-9]{20,}\b")
+
+
+def redact_secrets(text: str) -> str:
+    """Mask Hugging Face token-shaped strings before they reach logs, UI errors or crash reports."""
+    return _TOKEN_RE.sub("hf_****", text)
 
 
 class NoelleRuntimeError(Exception):

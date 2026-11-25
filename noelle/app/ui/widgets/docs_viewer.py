@@ -147,7 +147,8 @@ class DocsViewer(QWidget):
         self.license_btn.clicked.connect(self._open_license)
         head.addWidget(self.license_btn)
         root.addLayout(head)
-        self.web = _make_web_view() if _webengine_usable() else None
+        use_web = bool(ctx.settings.get("ui.use_webengine", False)) and _webengine_usable()
+        self.web = _make_web_view() if use_web else None
         if self.web is not None:
             self.sandbox.setText("sandboxed · scripts disabled")
             root.addWidget(self.web, 1)

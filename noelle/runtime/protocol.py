@@ -21,6 +21,7 @@ This module is pure Python on purpose: the UI imports it.
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -118,6 +119,16 @@ class ProtocolError(ValueError):
     pass
 
 
+def parse_ready_port(line: str) -> int | None:
+    """Port from a ``<prefix> ... port=<n>`` handshake line, or None when it is malformed."""
+    try:
+        fields = dict(part.split("=", 1) for part in line.split()[1:] if "=" in part)
+        port = int(fields.get("port", ""))
+    except (TypeError, ValueError):
+        return None
+    return port if 0 < port < 65536 else None
+
+
 def new_id() -> str:
     return uuid.uuid4().hex
 
@@ -169,6 +180,28 @@ def error_payload(code: ErrorCode | str, message: str, hint: str | None = None, 
     return data
 
 
+def _bounded_float(value: Any, default: float, low: float, high: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):  # NaN/inf from JSON or a buggy client
+        return default
+    return min(max(number, low), high)
+
+
+def _bounded_int(value: Any, default: int, low: int, high: int | None = None) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if high is not None:
+        number = min(number, high)
+    return max(number, low)
+
+
 @dataclass
 class GenerationParams:
     """Sampling parameters shared by the playground, the bench and the API server."""
@@ -186,22 +219,23 @@ class GenerationParams:
         data = data or {}
         params = cls()
         if "temperature" in data and data["temperature"] is not None:
-            params.temperature = min(max(float(data["temperature"]), 0.0), 2.0)
+            params.temperature = _bounded_float(data["temperature"], params.temperature, 0.0, 2.0)
         if "top_p" in data and data["top_p"] is not None:
-            params.top_p = min(max(float(data["top_p"]), 0.01), 1.0)
+            params.top_p = _bounded_float(data["top_p"], params.top_p, 0.01, 1.0)
         if "top_k" in data and data["top_k"] is not None:
-            params.top_k = max(int(data["top_k"]), 0)
+            params.top_k = _bounded_int(data["top_k"], params.top_k, 0)
         if "repetition_penalty" in data and data["repetition_penalty"] is not None:
-            params.repetition_penalty = min(max(float(data["repetition_penalty"]), 0.5), 2.5)
+            params.repetition_penalty = _bounded_float(data["repetition_penalty"], params.repetition_penalty, 0.5, 2.5)
         if "max_new_tokens" in data and data["max_new_tokens"] is not None:
-            params.max_new_tokens = max(int(data["max_new_tokens"]), 1)
+            params.max_new_tokens = _bounded_int(data["max_new_tokens"], params.max_new_tokens, 1)
         if data.get("seed") is not None:
-            params.seed = int(data["seed"])
+            seed = _bounded_int(data["seed"], -1, -(2**63), 2**63 - 1)
+            params.seed = None if seed < 0 else seed
         stop = data.get("stop")
         if isinstance(stop, str):
             params.stop = [stop]
         elif isinstance(stop, list):
-            params.stop = [str(s) for s in stop if s]
+            params.stop = [s for s in stop if isinstance(s, str) and s]
         return params
 
     def to_dict(self) -> dict[str, Any]:

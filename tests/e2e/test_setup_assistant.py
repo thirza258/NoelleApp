@@ -37,6 +37,10 @@ def test_assistant_flow_without_downloads(ctx: Any, qtbot: Any, memory_keyring: 
     assert wizard.currentId() == SetupAssistant.WELCOME
     wizard.next()
     account = wizard.currentPage()
+    assert hasattr(account, "banner")
+    assert "kept locally" in account.banner.text.text()
+    assert "third party" in account.banner.text.text()
+    assert "Hugging Face" in account.banner.text.text()
     account.token.setText("hf_fromWizard")
     wizard.next()  # validatePage stores the token
     assert hf_client.get_token() == "hf_fromWizard"

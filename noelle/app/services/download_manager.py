@@ -9,12 +9,13 @@ completed files. Progress arrives as JSON lines on the child's stdout.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 
 from noelle import paths
 from noelle.config import Settings
@@ -24,6 +25,50 @@ from noelle.app.services import hf_client
 from noelle.app.services.model_registry import ModelRecord, ModelRegistry
 
 MAX_CONCURRENT = 2
+TERMINATE_GRACE_MS = 3000
+log = logging.getLogger("noelle.downloads")
+
+
+def _text(value: Any, limit: int = 2000) -> str | None:
+    """Coerce a JSON scalar to bounded text (never a list/dict repr)."""
+    if isinstance(value, str):
+        return value[:limit]
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    return None
+
+
+def _file_name(value: Any) -> str | None:
+    """Repository paths come from the child as strings; anything else is malformed."""
+    return value if isinstance(value, str) and value else None
+
+
+def _positive_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number >= 0 else None
+
+
+def _parse_files(value: Any) -> dict[str, FileProgress]:
+    files: dict[str, FileProgress] = {}
+    if not isinstance(value, list):
+        return files
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = _file_name(item.get("name"))
+        if not name:
+            continue
+        size = _positive_int(item.get("size"))
+        cached = item.get("cached") is True
+        files[name] = FileProgress(name, size, cached=cached, done=cached, downloaded=(size or 0) if cached else 0)
+    return files
 
 
 @dataclass
@@ -58,6 +103,7 @@ class DownloadJob:
     log: list[str] = field(default_factory=list)
     _last_bytes: int = 0
     _last_time: float = 0.0
+    _finished_notified: bool = False
 
     @property
     def downloaded_bytes(self) -> int:
@@ -94,6 +140,7 @@ class DownloadManager(QObject):
         self.registry = registry
         self.jobs: dict[str, DownloadJob] = {}
         self._processes: dict[str, QProcess] = {}
+        self._process_jobs: dict[str, DownloadJob] = {}
         self._buffers: dict[str, str] = {}
         self._intentional_stop: set[str] = set()
 
@@ -128,28 +175,59 @@ class DownloadManager(QObject):
         self._terminate(repo_id, "cancelled")
 
     def shutdown(self) -> None:
+        # Downloads are resumable and every completed file is already in the cache, so a
+        # hard stop is safe and keeps quitting fast (terminate was given a short chance).
         for repo_id in list(self._processes):
-            self._terminate(repo_id, "paused")
+            self._terminate(repo_id, "paused", force=True)
+        for process in list(self._processes.values()):
+            try:
+                if process.state() != QProcess.ProcessState.NotRunning:
+                    process.waitForFinished(500)
+            except RuntimeError:
+                pass
 
     # ----------------------------------------------------------- internals
-    def _terminate(self, repo_id: str, status: str) -> None:
+    def _terminate(self, repo_id: str, status: str, *, force: bool = False) -> None:
+        """Signal the child without blocking the GUI thread; escalation happens on a timer."""
         job = self.jobs.get(repo_id)
         if job is None:
             return
         process = self._processes.get(repo_id)
-        if process is not None and process.state() != QProcess.ProcessState.NotRunning:
-            self._intentional_stop.add(repo_id)
-            process.terminate()
-            if not process.waitForFinished(3000):
-                process.kill()
-                process.waitForFinished(2000)
+        running = False
+        if process is not None:
+            try:
+                running = process.state() != QProcess.ProcessState.NotRunning
+            except RuntimeError:  # already deleted by the QProcess own cleanup
+                running = False
+            if running:
+                self._intentional_stop.add(repo_id)
+                if force:
+                    process.kill()
+                else:
+                    process.terminate()
+                    QTimer.singleShot(TERMINATE_GRACE_MS, lambda p=process: self._kill_if_running(p))
         job.status = status
         job.speed_bps = 0.0
+        job.finished_at = job.finished_at or time.time()
         self.job_updated.emit(repo_id)
-        self._pump()
+        if process is None or not running:
+            self._pump()
+
+    @staticmethod
+    def _kill_if_running(process: QProcess) -> None:
+        try:
+            if process.state() != QProcess.ProcessState.NotRunning:
+                process.kill()
+        except RuntimeError:
+            pass  # the process finished and its wrapper was deleted before the timer fired
 
     def _pump(self) -> None:
-        running = sum(1 for p in self._processes.values() if p.state() != QProcess.ProcessState.NotRunning)
+        running = 0
+        for process in self._processes.values():
+            try:
+                running += process.state() != QProcess.ProcessState.NotRunning
+            except RuntimeError:  # the QProcess wrapper was deleted; it is not running any more
+                continue
         for repo_id, job in self.jobs.items():
             if running >= MAX_CONCURRENT:
                 break
@@ -193,7 +271,11 @@ class DownloadManager(QObject):
         process.readyReadStandardOutput.connect(lambda r=repo_id: self._on_stdout(r))
         process.readyReadStandardError.connect(lambda r=repo_id: self._on_stderr(r))
         process.finished.connect(lambda code, status, r=repo_id: self._on_finished(r, code))
+        error_signal = getattr(process, "errorOccurred", None)  # absent on test doubles
+        if error_signal is not None:
+            error_signal.connect(lambda error, r=repo_id: self._on_process_error(r, error))
         self._processes[repo_id] = process
+        self._process_jobs[repo_id] = job  # identifies this child's output even if the job was replaced
         self._buffers[repo_id] = ""
         job.status = "planning"
         job.error = None
@@ -204,12 +286,22 @@ class DownloadManager(QObject):
         self.job_updated.emit(repo_id)
         process.start()
 
+    def _job_for_process(self, repo_id: str) -> DownloadJob | None:
+        """The job that owns the running child, or None when the child belongs to a replaced job."""
+        owner = self._process_jobs.get(repo_id)
+        current = self.jobs.get(repo_id)
+        if owner is None:  # tests and any legacy caller seed only _processes
+            return current
+        return owner if current is owner else None
+
     def _on_stderr(self, repo_id: str) -> None:
         process = self._processes.get(repo_id)
-        job = self.jobs.get(repo_id)
-        if process is None or job is None:
+        if process is None:
             return
         text = bytes(process.readAllStandardError()).decode("utf-8", errors="replace")
+        job = self._job_for_process(repo_id)
+        if job is None:
+            return
         for line in text.splitlines()[-20:]:
             if line.strip():
                 job.log.append(line.strip())
@@ -222,6 +314,9 @@ class DownloadManager(QObject):
         buffer = self._buffers.get(repo_id, "") + bytes(process.readAllStandardOutput()).decode("utf-8", "replace")
         lines = buffer.split("\n")
         self._buffers[repo_id] = lines.pop()
+        job = self._job_for_process(repo_id)
+        if job is None:
+            return
         for line in lines:
             line = line.strip()
             if not line:
@@ -230,53 +325,103 @@ class DownloadManager(QObject):
                 event = json.loads(line)
             except ValueError:
                 continue
-            self._apply(repo_id, event)
+            if isinstance(event, dict):
+                self._apply(repo_id, event)
         self.job_updated.emit(repo_id)
 
     def _apply(self, repo_id: str, event: dict[str, Any]) -> None:
-        job = self.jobs[repo_id]
+        """Apply one progress line. The child is external input: never trust its shape."""
+        job = self.jobs.get(repo_id)
+        if job is None or not isinstance(event, dict):
+            return
         kind = event.get("type")
-        if kind == "plan":
-            job.commit = event.get("commit")
-            job.total_bytes = int(event.get("total_bytes") or 0)
-            job.download_bytes = int(event.get("download_bytes") or 0)
-            job.files = {f["name"]: FileProgress(f["name"], f.get("size"), cached=bool(f.get("cached")),
-                                                 done=bool(f.get("cached")),
-                                                 downloaded=int(f.get("size") or 0) if f.get("cached") else 0)
-                         for f in event.get("files", [])}
-            job.status = "downloading"
-        elif kind == "progress":
-            entry = job.files.get(event.get("file", ""))
-            if entry is not None:
-                entry.downloaded = int(event.get("downloaded") or 0)
-                if event.get("total") and not entry.size:
-                    entry.size = int(event["total"])
-            self._update_speed(job)
-        elif kind == "file_done":
-            entry = job.files.get(event.get("file", ""))
-            if entry is not None:
-                entry.done = True
-                entry.downloaded = int(event.get("size") or entry.size or entry.downloaded)
-            self._update_speed(job)
-        elif kind == "verify":
-            entry = job.files.get(event.get("file", ""))
-            if entry is not None:
-                entry.verified = event.get("ok")
-        elif kind == "retry":
-            job.retries += 1
-            job.log.append(f"retry {event.get('attempt')} for {event.get('file')}: {event.get('error')}")
-        elif kind == "file_error":
-            job.log.append(f"{event.get('file')}: {event.get('message')}")
-        elif kind == "done":
-            job.path = event.get("path")
-            job.commit = event.get("commit") or job.commit
-            job.status = "done"
-            job.finished_at = time.time()
-            self._register(job, event)
-        elif kind == "error":
-            job.error = event.get("message")
-            job.error_code = event.get("code")
-            job.status = "error"
+        if kind not in ("plan", "progress", "file_done", "verify", "retry", "file_error", "done", "error"):
+            return
+        if kind not in ("done", "error") and job.status in ("paused", "cancelled"):
+            return  # late output from a child that is being stopped must not resurrect the job
+        try:
+            if kind == "plan":
+                job.commit = _text(event.get("commit")) or job.commit
+                job.total_bytes = _positive_int(event.get("total_bytes")) or 0
+                job.download_bytes = _positive_int(event.get("download_bytes")) or 0
+                job.files = _parse_files(event.get("files"))
+                job.status = "downloading"
+            elif kind == "progress":
+                entry = job.files.get(_file_name(event.get("file")) or "")
+                if entry is not None:
+                    downloaded = _positive_int(event.get("downloaded"))
+                    if downloaded is not None:
+                        entry.downloaded = downloaded
+                    total = _positive_int(event.get("total"))
+                    if total and not entry.size:
+                        entry.size = total
+                self._update_speed(job)
+            elif kind == "file_done":
+                entry = job.files.get(_file_name(event.get("file")) or "")
+                if entry is not None:
+                    entry.done = True
+                    entry.downloaded = _positive_int(event.get("size")) or entry.size or entry.downloaded
+                self._update_speed(job)
+            elif kind == "verify":
+                entry = job.files.get(_file_name(event.get("file")) or "")
+                if entry is not None:
+                    entry.verified = event.get("ok") if isinstance(event.get("ok"), bool) else None
+            elif kind == "retry":
+                job.retries += 1
+                job.log.append(f"retry {_text(event.get('attempt'))} for {_text(event.get('file'))}: "
+                               f"{_text(event.get('error'))}")
+            elif kind == "file_error":
+                job.log.append(f"{_text(event.get('file'))}: {_text(event.get('message'))}")
+            elif kind == "done":
+                job.path = _text(event.get("path")) or job.path
+                job.commit = _text(event.get("commit")) or job.commit
+                job.status = "done"
+                job.finished_at = time.time()
+                self._register(job, event)
+            else:  # error
+                job.error = _text(event.get("message")) or "The download failed."
+                job.error_code = _text(event.get("code"))
+                job.status = "error"
+                job.finished_at = time.time()
+        except (OSError, ValueError, TypeError) as exc:
+            # A malformed/unexpected line is a diagnostic, not a crash in a Qt slot.
+            log.warning("Ignoring malformed download event for %s: %s", repo_id, exc)
+            job.log.append(f"ignored malformed download update: {exc}")
+        del job.log[:-50]
+
+    def _on_process_error(self, repo_id: str, error: QProcess.ProcessError) -> None:
+        """Surface a child that never started; ``finished`` is not emitted for FailedToStart."""
+        if error != QProcess.ProcessError.FailedToStart or repo_id in self._intentional_stop:
+            return
+        job = self._job_for_process(repo_id)
+        process = self._processes.pop(repo_id, None)
+        self._process_jobs.pop(repo_id, None)
+        detail = ""
+        if process is not None:
+            try:
+                detail = process.errorString().strip()
+            except RuntimeError:
+                pass
+            process.deleteLater()
+        self._buffers.pop(repo_id, None)
+        if job is None:
+            return
+        job.status = "error"
+        job.error_code = "PROCESS_START"
+        job.error = ("The download helper could not start. The installed Python runtime may be missing or "
+                     "inaccessible. Reinstall Noelle or select a valid runtime Python in Settings."
+                     + (f" ({detail})" if detail else ""))
+        job.finished_at = time.time()
+        log.error("Download helper for %s failed to start: %s", repo_id, detail or "(no detail)")
+        self.job_updated.emit(repo_id)
+        self._notify_finished(repo_id, job)
+        self._pump()
+
+    def _notify_finished(self, repo_id: str, job: DownloadJob) -> None:
+        if job._finished_notified:
+            return
+        job._finished_notified = True
+        self.job_finished.emit(repo_id, job.status == "done")
 
     def _update_speed(self, job: DownloadJob) -> None:
         now = time.monotonic()
@@ -290,6 +435,8 @@ class DownloadManager(QObject):
 
     def _register(self, job: DownloadJob, event: dict[str, Any]) -> None:
         summary = job.summary
+        files = event.get("files")
+        names = [name for name in files if isinstance(name, str)] if isinstance(files, list) else []
         record = ModelRecord(
             repo_id=job.repo_id,
             pipeline_tag=getattr(summary, "pipeline_tag", None),
@@ -300,41 +447,56 @@ class DownloadManager(QObject):
             architecture=getattr(summary, "architecture", None),
             param_count=getattr(summary, "param_count", None),
             license=getattr(summary, "license", None),
-            size_bytes=int(event.get("total_bytes") or job.total_bytes or 0),
-            metadata={"tags": list(getattr(summary, "tags", []) or [])[:40],
-                      "files": event.get("files", [])[:200]},
+            size_bytes=_positive_int(event.get("total_bytes")) or job.total_bytes or 0,
+            metadata={"tags": list(getattr(summary, "tags", []) or [])[:40], "files": names[:200]},
         )
-        gguf_files = [f for f in event.get("files", []) if str(f).endswith(".gguf")]
-        has_weights = any(str(f).endswith((".safetensors", ".bin")) for f in event.get("files", []))
+        gguf_files = [f for f in names if f.endswith(".gguf")]
+        has_weights = any(f.endswith((".safetensors", ".bin")) for f in names)
         if gguf_files and not has_weights:
             record.gguf_file = gguf_files[0]
             record.precision = "gguf-q4_k_m" if "q4_k" in gguf_files[0].lower() else "auto"
-        if getattr(summary, "is_adapter", False):
-            from noelle.app.services.model_registry import AdapterRecord
+        try:
+            if getattr(summary, "is_adapter", False):
+                from noelle.app.services.model_registry import AdapterRecord
 
-            base = (getattr(summary, "base_models", None) or [None])[0]
-            self.registry.add_adapter(AdapterRecord(job.repo_id, base, job.path, record.size_bytes))
-        else:
-            self.registry.upsert_model(record)
+                base = (getattr(summary, "base_models", None) or [None])[0]
+                self.registry.add_adapter(AdapterRecord(job.repo_id, base, job.path, record.size_bytes))
+            else:
+                self.registry.upsert_model(record)
+        except Exception:  # noqa: BLE001 - the files are downloaded; a registry failure must be reported, not crash
+            log.exception("The download of %s finished but could not be added to the library", job.repo_id)
+            job.log.append("Download finished, but saving it to the library failed. Run 'Rescan' in Storage.")
+            job.error = "Downloaded, but could not be saved to the library. Run Rescan in Storage."
+            job.error_code = "REGISTRY_WRITE"
+            job.status = "error"
 
     def _on_finished(self, repo_id: str, exit_code: int) -> None:
-        job = self.jobs.get(repo_id)
+        current = self.jobs.get(repo_id)
+        owner = self._process_jobs.get(repo_id)
+        job = owner if owner is not None else current
+        if job is not current:  # a newer job replaced this child: its output must not touch the new one
+            job = None
         process = self._processes.pop(repo_id, None)
+        self._buffers.pop(repo_id, None)
         if process is not None:
-            self._on_stdout_tail(repo_id, process)
+            if job is not None:
+                self._on_stdout_tail(repo_id, process)
             process.deleteLater()
+        self._process_jobs.pop(repo_id, None)
         intentional = repo_id in self._intentional_stop
         self._intentional_stop.discard(repo_id)
         if job is not None and not intentional and job.status not in ("done", "error"):
             job.status = "error" if exit_code != 0 else "done"
+            job.finished_at = job.finished_at or time.time()
             if exit_code != 0 and not job.error:
                 job.error = "The download process stopped unexpectedly." + (
                     f" Last output: {job.log[-1]}" if job.log else "")
+                job.error_code = "PROCESS_EXIT"
         if job is not None:
             job.speed_bps = 0.0
             self.job_updated.emit(repo_id)
             if not intentional:
-                self.job_finished.emit(repo_id, job.status == "done")
+                self._notify_finished(repo_id, job)
         self._pump()
 
     def _on_stdout_tail(self, repo_id: str, process: QProcess) -> None:

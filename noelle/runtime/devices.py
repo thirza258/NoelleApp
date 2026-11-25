@@ -13,15 +13,25 @@ from functools import lru_cache
 from typing import Any
 
 import psutil
-import torch
 
 from noelle.runtime.preflight import DEFAULT_HEADROOM, GB, MemoryBudget
 
 
+def _torch() -> Any:
+    import torch
+    return torch
+
+
 def resolve_device(preference: str | None = "auto") -> str:
     pref = (preference or "auto").lower()
-    cuda = torch.cuda.is_available()
-    mps = torch.backends.mps.is_available()
+    if pref == "cpu":
+        return "cpu"
+    try:
+        torch = _torch()
+        cuda = torch.cuda.is_available()
+        mps = getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
+    except Exception:
+        cuda = mps = False
     if pref in ("cuda", "gpu") and cuda:
         return "cuda"
     if pref in ("mps", "metal") and mps:
@@ -38,7 +48,10 @@ def resolve_device(preference: str | None = "auto") -> str:
 @lru_cache(maxsize=4)
 def device_name(device: str) -> str:
     if device == "cuda":
-        return torch.cuda.get_device_name(0)
+        try:
+            return _torch().cuda.get_device_name(0)
+        except Exception:
+            return "NVIDIA GPU"
     if device == "mps":
         try:
             out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True,
@@ -49,7 +62,8 @@ def device_name(device: str) -> str:
     return platform.processor() or platform.machine() or "CPU"
 
 
-def torch_dtype(device: str, precision: str | None) -> torch.dtype:
+def torch_dtype(device: str, precision: str | None) -> Any:
+    torch = _torch()
     precision = (precision or "auto").lower()
     if precision == "fp32":
         return torch.float32
@@ -67,6 +81,42 @@ def torch_dtype(device: str, precision: str | None) -> torch.dtype:
     return torch.float16 if device != "cpu" else torch.float32
 
 
+def _memory_info(device: str) -> tuple[int, int]:
+    """``(free, total)`` accelerator memory using APIs available on torch 2.4 as well as newer ones.
+
+    ``torch.accelerator`` only exists from torch 2.5, while Noelle supports 2.4, so the
+    backend-specific functions are preferred and the unified API is only a fallback.
+    """
+    torch = _torch()
+    if device == "cuda":
+        mem_get_info = getattr(torch.cuda, "mem_get_info", None)
+        if mem_get_info is not None:
+            free, total = mem_get_info()
+            return int(free), int(total)
+    elif device == "mps":
+        recommended = getattr(torch.mps, "recommended_max_memory", None)
+        driver = getattr(torch.mps, "driver_allocated_memory", None)
+        if recommended is not None and driver is not None:
+            total = int(recommended())
+            return max(total - int(driver()), 0), total
+    accelerator = getattr(torch, "accelerator", None)
+    if accelerator is not None:
+        free, total = accelerator.get_memory_info()
+        return int(free), int(total)
+    raise RuntimeError(f"memory information is unavailable for device '{device}'")
+
+
+def _allocator_stats(device: str) -> tuple[int, int]:
+    """``(allocated, peak)`` bytes held by live tensors in this process."""
+    torch = _torch()
+    accelerator = getattr(torch, "accelerator", None)
+    if accelerator is not None:
+        return int(accelerator.memory_allocated()), int(accelerator.max_memory_allocated())
+    if device == "cuda":
+        return int(torch.cuda.memory_allocated()), int(torch.cuda.max_memory_allocated())
+    return int(torch.mps.current_allocated_memory()), int(torch.mps.driver_allocated_memory())
+
+
 def memory_snapshot(device: str) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     snap: dict[str, Any] = {
@@ -78,13 +128,10 @@ def memory_snapshot(device: str) -> dict[str, Any]:
     }
     try:
         if device in ("cuda", "mps"):
-            free, total = torch.accelerator.get_memory_info()
-            snap.update(
-                total=int(total),
-                free=int(free),
-                allocated=int(torch.accelerator.memory_allocated()),
-                peak=int(torch.accelerator.max_memory_allocated()),
-            )
+            torch = _torch()
+            free, total = _memory_info(device)
+            allocated, peak = _allocator_stats(device)
+            snap.update(total=total, free=free, allocated=allocated, peak=peak)
             if device == "cuda":
                 snap["reserved"] = int(torch.cuda.memory_reserved())
             else:
@@ -106,7 +153,7 @@ def memory_budget(device: str, override_gb: float | None = None, headroom: float
         return MemoryBudget(int(override_gb * GB), headroom, system_ram, device)
     if device in ("cuda", "mps"):
         try:
-            _, total = torch.accelerator.get_memory_info()
+            _, total = _memory_info(device)
             return MemoryBudget(int(total), headroom, system_ram, device)
         except Exception:
             pass
@@ -116,7 +163,7 @@ def memory_budget(device: str, override_gb: float | None = None, headroom: float
 def free_bytes(device: str) -> int:
     if device in ("cuda", "mps"):
         try:
-            free, _ = torch.accelerator.get_memory_info()
+            free, _ = _memory_info(device)
             return int(free)
         except Exception:
             pass
@@ -126,7 +173,12 @@ def free_bytes(device: str) -> int:
 def reset_peak(device: str) -> None:
     if device in ("cuda", "mps"):
         try:
-            torch.accelerator.reset_peak_memory_stats()
+            torch = _torch()
+            accelerator = getattr(torch, "accelerator", None)
+            if accelerator is not None:
+                accelerator.reset_peak_memory_stats()
+            elif device == "cuda":
+                torch.cuda.reset_peak_memory_stats()
         except Exception:
             pass
 
@@ -134,7 +186,7 @@ def reset_peak(device: str) -> None:
 def peak_bytes(device: str) -> int | None:
     if device in ("cuda", "mps"):
         try:
-            return int(torch.accelerator.max_memory_allocated())
+            return _allocator_stats(device)[1]
         except Exception:
             return None
     return psutil.Process().memory_info().rss
@@ -142,6 +194,7 @@ def peak_bytes(device: str) -> int | None:
 
 def synchronize(device: str) -> None:
     try:
+        torch = _torch()
         if device == "cuda":
             torch.cuda.synchronize()
         elif device == "mps":
@@ -154,6 +207,7 @@ def empty_cache(device: str | None = None) -> None:
     """Return freed blocks to the driver: ``gc.collect()`` then the backend's cache flush."""
     gc.collect()
     try:
+        torch = _torch()
         if torch.cuda.is_available() and device in (None, "cuda"):
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
@@ -164,7 +218,11 @@ def empty_cache(device: str | None = None) -> None:
 
 
 def is_oom(exc: BaseException) -> bool:
-    if isinstance(exc, torch.OutOfMemoryError):
+    try:
+        torch = _torch()
+    except ImportError:
+        torch = None
+    if torch is not None and isinstance(exc, torch.OutOfMemoryError):
         return True
     text = str(exc).lower()
     return "out of memory" in text or "mps backend out of memory" in text or "cuda error: out of memory" in text
@@ -175,10 +233,12 @@ def is_apple_silicon() -> bool:
 
 
 def runtime_info() -> dict[str, Any]:
+    torch = _torch()
+    mps_backend = getattr(torch.backends, "mps", None)
     info: dict[str, Any] = {
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
-        "mps_available": torch.backends.mps.is_available(),
+        "mps_available": bool(mps_backend and mps_backend.is_available()),
         "apple_silicon": is_apple_silicon(),
         "python": platform.python_version(),
     }

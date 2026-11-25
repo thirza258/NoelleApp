@@ -13,7 +13,7 @@ from noelle.app.ui.widgets.common import button, label
 from noelle.runtime.preflight import format_bytes
 
 STATE_TEXT = {
-    "stopped": ("Runtime stopped", theme.TEXT_FAINT),
+    "stopped": ("Runtime idle", theme.TEXT_FAINT),
     "starting": ("Starting runtime…", theme.WARNING),
     "warming": ("Runtime warming up…", theme.WARNING),
     "ready": ("Runtime ready", theme.SUCCESS),
@@ -132,6 +132,7 @@ class TelemetryBar(QFrame):
         self.state_text.setText(text)
         self.state_dot.setStyleSheet(f"color: {color}; font-size: 10px;")
         self.restart_btn.setVisible(state in ("crashed", "unresponsive", "stopped"))
+        self.restart_btn.setText("Start" if state == "stopped" else "Restart")
 
     def set_server_state(self, state: str, port: int | None) -> None:
         if state == "running" and port:

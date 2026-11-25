@@ -65,8 +65,8 @@ procedure InitializeWizard;
 begin
   TokenPage := CreateInputQueryPage(wpSelectTasks,
     'Hugging Face account', 'Optional: connect your Hugging Face account',
-    'Paste a Hugging Face access token to download gated or private models. It is stored in ' +
-    'Windows Credential Manager, never in a file, and only sent to huggingface.co. ' +
+    'Paste a Hugging Face access token to download gated or private models. It is kept locally in ' +
+    'Windows Credential Manager, never in a file, and never transferred to any third party other than Hugging Face. ' +
     'Leave it empty to skip; you can add it later in Noelle''s Settings.');
   TokenPage.Add('Access token (hf_...):', True);
 end;

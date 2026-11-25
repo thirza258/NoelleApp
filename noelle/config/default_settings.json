@@ -18,6 +18,7 @@
     "memory_budget_gb": null,
     "safety_headroom": 0.15,
     "keep_models_loaded": true,
+    "autostart": false,
     "offline": true,
     "heartbeat_timeout_s": 20,
     "trusted_remote_code": [],
@@ -65,6 +66,7 @@
   },
   "ui": {
     "theme": "system",
+    "use_webengine": false,
     "hero_collapse_threshold": 120,
     "hero_width": 380,
     "hero_animation_ms": 250

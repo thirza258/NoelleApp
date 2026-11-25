@@ -185,10 +185,14 @@ class WorkerCall:
             raise ApiError(503, f"Cannot reach the model worker: {exc}", type="server_error",
                            code="worker_unavailable") from None
         kind = event.get("event")
+        payload = event.get("payload")
+        if not isinstance(payload, dict):  # the worker is external input too: never trust the shape
+            payload = {}
+            event["payload"] = payload
         if kind in TERMINAL_EVENTS:
             self.finished = True
         if kind == Event.ERROR:
-            raise worker_error(event.get("payload") or {})
+            raise worker_error(payload)
         return event
 
     async def first_output(self) -> dict[str, Any]:

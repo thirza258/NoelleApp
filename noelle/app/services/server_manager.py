@@ -27,6 +27,7 @@ class ServerManager(QObject):
         self.runtime = runtime
         self._process: QProcess | None = None
         self._state = "stopped"
+        self._failed_to_start = False
         self._buffer = ""
         self._endpoint: str | None = None
         self.port: int | None = None
@@ -74,10 +75,14 @@ class ServerManager(QObject):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self._on_output)
         process.finished.connect(self._on_finished)
+        error_signal = getattr(process, "errorOccurred", None)  # absent on test doubles
+        if error_signal is not None:
+            error_signal.connect(self._on_process_error)
         self._process = process
         self._endpoint = endpoint
         self.port = port
         self.last_error = None
+        self._failed_to_start = False
         self._set_state("starting")
         process.start()
 
@@ -90,8 +95,26 @@ class ServerManager(QObject):
         self._process = None
         self._set_state("stopped")
 
+    def _on_process_error(self, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart:
+            return
+        process = self._process
+        self._process = None
+        self._failed_to_start = True
+        detail = ""
+        if process is not None:
+            try:
+                detail = process.errorString().strip()
+            except RuntimeError:
+                pass
+            process.deleteLater()
+        self.last_error = ("The API server process could not start. The runtime Python may be missing or "
+                           "inaccessible." + (f" ({detail})" if detail else ""))
+        self._set_state("error")
+
     def _on_output(self) -> None:
-        assert self._process is not None
+        if self._process is None:
+            return
         self._buffer += bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
@@ -107,6 +130,10 @@ class ServerManager(QObject):
             self.log_line.emit(line)
 
     def _on_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        if self._failed_to_start:
+            self._failed_to_start = False
+            self._process = None
+            return
         if self._state != "stopped":
             tail = list(self.log)[-5:]
             if any("address already in use" in l.lower() or "errno 48" in l.lower() or "10048" in l for l in tail):

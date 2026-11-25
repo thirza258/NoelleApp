@@ -74,7 +74,10 @@ class AccountPage(QWizardPage):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         self.existing = hf_client.get_token() is not None
-        layout.addWidget(label("Your token is stored in this computer's credential vault (macOS Keychain, Windows "
+        self.banner = Banner("info", "Your token is kept locally on this computer and is never transferred to any "
+                                     "third party other than Hugging Face.")
+        layout.addWidget(self.banner)
+        layout.addWidget(label("Stored in this computer's credential vault (macOS Keychain, Windows "
                                "Credential Manager or Secret Service). It is only sent to huggingface.co and never "
                                "to model processes.", "muted", wrap=True))
         row = QHBoxLayout()

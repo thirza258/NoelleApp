@@ -12,6 +12,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,8 +55,11 @@ class HardwareMetrics:
 
 
 def _run(args: list[str], timeout: float = 2.0) -> str:
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     try:
-        return subprocess.run(args, capture_output=True, text=True, timeout=timeout).stdout
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout, **kwargs).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
 

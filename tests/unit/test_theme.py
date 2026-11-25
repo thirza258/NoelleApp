@@ -78,6 +78,14 @@ def test_theme_setting_defaults_to_system() -> None:
     assert get_settings().get("ui.theme") == "system"
 
 
+def test_no_gradients_in_design(restore_theme: Any) -> None:
+    theme = restore_theme
+    for name in ("light", "dark"):
+        theme.use(name)
+        sheet = theme.stylesheet()
+        assert "gradient" not in sheet.lower(), f"Gradient found in {name} theme stylesheet"
+
+
 def test_icons_follow_the_active_palette(qapp: Any, restore_theme: Any) -> None:
     from noelle.app import icons
 

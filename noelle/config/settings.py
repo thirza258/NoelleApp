@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -20,6 +21,7 @@ from noelle import paths
 
 _DEFAULTS_PATH = Path(__file__).with_name("default_settings.json")
 _MISSING = object()
+log = logging.getLogger("noelle.settings")
 
 
 def load_defaults() -> dict[str, Any]:
@@ -57,8 +59,13 @@ class Settings:
                 self._overrides = data if isinstance(data, dict) else {}
             except FileNotFoundError:
                 self._overrides = {}
-            except (OSError, json.JSONDecodeError):
-                # A corrupt settings file must never stop the app from starting.
+            except json.JSONDecodeError as exc:
+                # A corrupt settings file must never stop the app from starting, but it must be
+                # visible in the logs (and is preserved until the next successful save).
+                log.warning("Ignoring unreadable settings file %s: %s. Defaults are in use.", self._path, exc)
+                self._overrides = {}
+            except OSError as exc:
+                log.warning("Could not read settings file %s: %s. Defaults are in use.", self._path, exc)
                 self._overrides = {}
 
     def as_dict(self) -> dict[str, Any]:
@@ -117,10 +124,29 @@ class Settings:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(self._overrides, fh, indent=2, sort_keys=True)
+                fh.flush()
+                os.fsync(fh.fileno())  # durable before the atomic rename: a crash cannot leave a torn file
             os.replace(tmp, self._path)
+            _sync_directory(self._path.parent)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise
+
+
+def _sync_directory(directory: Path) -> None:
+    """Best-effort directory fsync so the rename itself survives a power loss (POSIX only)."""
+    if os.name != "posix":
+        return
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass  # some filesystems (e.g. network mounts) do not support directory fsync
+    finally:
+        os.close(fd)
 
 
 def _lookup(source: dict[str, Any], key: str) -> Any:

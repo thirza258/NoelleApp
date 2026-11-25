@@ -16,6 +16,8 @@ All methods are thread-safe (one connection guarded by a lock).
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import statistics
 import threading
@@ -29,6 +31,7 @@ from noelle import paths
 from noelle.runtime import tasks
 
 SCHEMA_VERSION = 2
+log = logging.getLogger("noelle.registry")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS models (
@@ -235,6 +238,18 @@ class ModelRegistry:
         self.path = Path(path) if path else paths.registry_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self.recovered_path: Path | None = None
+        try:
+            self._open()
+        except sqlite3.DatabaseError as exc:
+            # A truncated or corrupt registry must not make Noelle unstartable. Keep the
+            # unreadable file for diagnostics (never delete user data) and start fresh.
+            self.recovered_path = self._quarantine()
+            log.error("The model registry %s was unreadable (%s); it was moved to %s and a new one was created.",
+                      self.path, exc, self.recovered_path)
+            self._open()
+
+    def _open(self) -> None:
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False, timeout=10.0)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -246,6 +261,29 @@ class ModelRegistry:
             self._conn.execute("UPDATE meta SET value=? WHERE key='schema_version' AND CAST(value AS INTEGER) < ?",
                                (str(SCHEMA_VERSION), SCHEMA_VERSION))
             self._conn.commit()
+
+    def _quarantine(self) -> Path:
+        """Close the broken database and rename it (and its WAL sidecars) out of the way."""
+        conn = getattr(self, "_conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = self.path.with_name(f"{self.path.name}.corrupt-{stamp}-{os.getpid()}")
+        suffix = 1
+        while target.exists() or any(target.with_name(target.name + tail).exists() for tail in ("-wal", "-shm")):
+            suffix += 1
+            target = self.path.with_name(f"{self.path.name}.corrupt-{stamp}-{os.getpid()}-{suffix}")
+        for source in (self.path, self.path.with_name(self.path.name + "-wal"),
+                       self.path.with_name(self.path.name + "-shm")):
+            if source.exists():
+                try:
+                    source.replace(target.with_name(target.name + source.name[len(self.path.name):]))
+                except OSError as exc:
+                    raise sqlite3.DatabaseError(f"could not quarantine {source}: {exc}") from exc
+        return target
 
     def close(self) -> None:
         with self._lock:

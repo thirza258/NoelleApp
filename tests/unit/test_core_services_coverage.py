@@ -82,6 +82,52 @@ def test_poll_runs_off_the_gui_thread(qtbot: Any, monkeypatch: pytest.MonkeyPatc
     assert manager.latest is not None and manager.latest.runtime_state == "stopped"
 
 
+def test_hardware_manager_run_no_window_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        from types import SimpleNamespace
+        return SimpleNamespace(stdout="ok")
+
+    monkeypatch.setattr(hm.sys, "platform", "win32")
+    monkeypatch.setattr(hm.subprocess, "run", fake_run)
+    assert hm._run(["nvidia-smi"]) == "ok"
+    assert len(calls) == 1
+    assert calls[0].get("creationflags") == getattr(hm.subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
+def test_worker_command_prefers_pythonw_on_windows(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    from noelle.runtime.client import worker_command
+
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    python_exe = scripts / "python.exe"
+    python_exe.touch()
+    pythonw_exe = scripts / "pythonw.exe"
+    pythonw_exe.touch()
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr("sys.platform", "win32")
+    cmd = worker_command(str(python_exe))
+    assert cmd == [str(pythonw_exe), "-m", "noelle"]
+
+
+def test_main_does_not_attach_console_for_gui(monkeypatch: pytest.MonkeyPatch) -> None:
+    from noelle import __main__ as nmain
+    import noelle.app.main as app_main
+
+    attached = []
+    monkeypatch.setattr(nmain, "_attach_windows_console", lambda: attached.append(True))
+    monkeypatch.setattr(app_main, "run", lambda argv: 0)
+
+    for cmd in (["ui"], ["setup"]):
+        attached.clear()
+        nmain.main(cmd)
+        assert attached == []
+
+
 # ==================================================================== hf_client
 def _info(**overrides: Any) -> Any:
     base = dict(id="org/Model-2B", author=None, pipeline_tag="text-generation", library_name="peft",

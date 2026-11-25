@@ -114,3 +114,34 @@ def test_compatibility_badges_follow_budget(window: Any) -> None:
     big, small = _models("x", 7)[6], _models("x", 7)[0]  # 7B and 1B
     assert ctx.compat(small).level == "green"
     assert ctx.compat(big).level in ("yellow", "red")
+
+
+def test_filter_by_supported_spec(window: Any, qtbot: Any) -> None:
+    from noelle.runtime.preflight import GB, MemoryBudget
+
+    page = window.pages["discover"]
+    qtbot.waitUntil(lambda: len(page.grid.cards) >= 30, timeout=5000)
+
+    # Filter by supported specs (fits hardware: green & yellow)
+    page.spec_filter.setCurrentIndex(1)  # "supported"
+    qtbot.wait(100)
+    assert page.grid.spec_filter == "supported"
+    visible_cards = [c for c in page.grid.cards if c.isVisible()]
+    for c in visible_cards:
+        compat = page.grid._compat(c.model)
+        assert compat is not None and compat.level in ("green", "yellow")
+
+    # Filter by runs natively (green only)
+    page.spec_filter.setCurrentIndex(2)  # "green"
+    qtbot.wait(100)
+    assert page.grid.spec_filter == "green"
+    visible_cards = [c for c in page.grid.cards if c.isVisible()]
+    for c in visible_cards:
+        compat = page.grid._compat(c.model)
+        assert compat is not None and compat.level == "green"
+
+    # Reset to all
+    page.spec_filter.setCurrentIndex(0)  # "all"
+    qtbot.wait(100)
+    assert page.grid.spec_filter == "all"
+    assert all(c.isVisible() for c in page.grid.cards)

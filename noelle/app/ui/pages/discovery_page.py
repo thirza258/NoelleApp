@@ -36,6 +36,12 @@ CATEGORIES: list[tuple[str, str, str, str | None]] = [
 ]
 SORT_OPTIONS = [("Trending", "trending"), ("Most downloads", "downloads"), ("Most likes", "likes"),
                 ("Recently updated", "recent")]
+SPEC_FILTER_OPTIONS = [
+    ("All specs", "all"),
+    ("Fits hardware", "supported"),
+    ("Runs natively", "green"),
+    ("Needs 4-bit", "yellow"),
+]
 
 
 class DiscoveryPage(QWidget):
@@ -116,6 +122,11 @@ class DiscoveryPage(QWidget):
             self.sort.addItem(text, key)
         self.sort.setFixedWidth(160)
         header.addWidget(self.sort)
+        self.spec_filter = QComboBox()
+        for text, key in SPEC_FILTER_OPTIONS:
+            self.spec_filter.addItem(text, key)
+        self.spec_filter.setFixedWidth(145)
+        header.addWidget(self.spec_filter)
         self.refresh_btn = icon_button("refresh", "Refresh")
         header.addWidget(self.refresh_btn)
         column.addLayout(header)
@@ -151,6 +162,7 @@ class DiscoveryPage(QWidget):
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
         self.search.returnPressed.connect(self.reload)
         self.sort.currentIndexChanged.connect(lambda _i: self.reload())
+        self.spec_filter.currentIndexChanged.connect(self._on_spec_filter_changed)
         self.refresh_btn.clicked.connect(self.reload)
 
         ctx.hardware.hardware_telemetry_updated.connect(self._on_hardware)
@@ -192,6 +204,7 @@ class DiscoveryPage(QWidget):
         self.error_banner.hide()
         self.grid.set_downloaded(self.ctx.downloaded_ids())
         self.grid.clear()
+        self.grid.set_spec_filter(self.spec_filter.currentData() or "all")
         if self._category == "library":
             records = [r for r in self.ctx.registry.list_models() if r.exists_on_disk()]
             self.grid.set_models([summary_from_record(r) for r in records])
@@ -262,6 +275,13 @@ class DiscoveryPage(QWidget):
         from noelle.app.ui.widgets.hero_card import readme_blurb
 
         runner().submit(lambda: readme_blurb(self.ctx.hf.fetch_readme(repo_id)), on_result=callback)
+
+    def _on_spec_filter_changed(self, _index: int = 0) -> None:
+        key = self.spec_filter.currentData() or "all"
+        self.grid.set_spec_filter(key)
+        visible_count = sum(1 for c in self.grid.cards if self.grid._card_matches_spec(c))
+        if key != "all" and visible_count < 10 and self._pager and not self._pager.exhausted:
+            self.load_more()
 
     # --------------------------------------------------------------- events
     def _on_hardware(self, metrics: Any) -> None:

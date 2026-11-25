@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -46,6 +47,7 @@ from noelle.runtime.preflight import (
 
 PLANNING_CONTEXT_TOKENS = 2048
 _WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt", ".pth", ".gguf", ".npz")
+log = logging.getLogger("noelle.models")
 
 
 @dataclass
@@ -309,11 +311,13 @@ class ModelManager:
             release = getattr(loaded.engine, "release", None)
             if release:
                 release()
+        except Exception:  # noqa: BLE001 - the model is already gone; a faulty release must not wedge the lane
+            log.warning("Releasing %s raised; the model was unloaded anyway.", key, exc_info=True)
         finally:
             loaded.engine = None
             del loaded
             devices.empty_cache(device)
-        self._changed()
+            self._changed()
         return True
 
     def unload_matching(self, model_id: str | None = None) -> list[str]:
@@ -334,8 +338,8 @@ class ModelManager:
         if self._on_change:
             try:
                 self._on_change()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - a telemetry/broadcast failure must not abort a load or unload
+                log.warning("Model-change callback raised", exc_info=True)
 
     @staticmethod
     def _allocated(device: str, engine_name: str | None = None) -> int:

@@ -150,8 +150,7 @@ QLabel[role="link"] {{ color: {ACCENT}; }}
 QFrame[card="true"] {{ background: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: {RADIUS}px; }}
 QFrame[card="true"][hover="true"] {{ border-color: {BORDER_STRONG}; background: {CARD_HOVER}; }}
 QFrame[panel="true"] {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: {RADIUS}px; }}
-QFrame[hero="true"] {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {HERO_START}, stop:0.55 {HERO_MID},
-                       stop:1 {HERO_END}); border: 1px solid {HERO_BORDER}; border-radius: 14px; }}
+QFrame[hero="true"] {{ background: {HERO_START}; border: 1px solid {HERO_BORDER}; border-radius: 14px; }}
 QFrame[divider="true"] {{ background: {BORDER}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame[banner="warning"] {{ background: {WARNING_SOFT}; border: 1px solid {WARNING_BORDER}; border-radius: 8px; }}
 QFrame[banner="danger"] {{ background: {DANGER_SOFT}; border: 1px solid {DANGER_BORDER}; border-radius: 8px; }}

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 import logging.handlers
 import os
@@ -22,6 +21,19 @@ def _configure_logging() -> None:
     root.addHandler(handler)
     for noisy in ("httpx", "httpx2", "httpcore", "huggingface_hub", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    _install_excepthook()
+
+
+def _install_excepthook() -> None:
+    """Exceptions raised inside Qt slots would otherwise only reach a console the GUI build lacks."""
+    log = logging.getLogger("noelle")
+
+    def hook(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+        log.critical("Unhandled exception", exc_info=(exc_type, exc, tb))  # type: ignore[arg-type]
+        sys.__excepthook__(exc_type, exc, tb)  # type: ignore[arg-type]
+
+    if sys.excepthook is not hook:
+        sys.excepthook = hook
 
 
 def _apply_environment() -> None:
@@ -57,24 +69,28 @@ def build_context():  # noqa: ANN201 - returns AppContext
                       runtime=runtime, hardware=hardware, downloads=downloads, server=server)
 
 
-def run(argv: list[str] | None = None) -> int:
-    paths.ensure_dirs()
-    _configure_logging()
-    _apply_environment()
+def _prepare_storage() -> OSError | None:
+    """Create the data directories; return the error instead of crashing before any UI exists."""
+    try:
+        paths.ensure_dirs()
+    except OSError as exc:
+        return exc
+    try:
+        _configure_logging()
+    except OSError as exc:  # e.g. a full disk: the app can still run, but say so on stderr
+        print(f"Noelle could not open its log file: {exc}", file=sys.stderr)
+    return None
 
+
+def run(argv: list[str] | None = None) -> int:
     from PySide6.QtCore import QCoreApplication, Qt, QTimer
     from PySide6.QtGui import QGuiApplication
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     from noelle.app import icons, theme
     from noelle.app.ui.main_window import MainWindow
 
-    # QtWebEngine (sandboxed model-card viewer) must be initialised before QApplication exists.
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
-    try:
-        importlib.import_module("PySide6.QtWebEngineWidgets")
-    except ImportError:
-        pass
     QCoreApplication.setOrganizationName(APP_NAME)
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setApplicationVersion(__version__)
@@ -84,10 +100,20 @@ def run(argv: list[str] | None = None) -> int:
     app.setWindowIcon(icons.app_icon())
     theme.apply(app)
 
+    problem = _prepare_storage()
+    if problem is not None:
+        QMessageBox.critical(
+            None, "Noelle cannot start",
+            f"Noelle could not create its data folder at {paths.home()}.\n\n{problem}\n\n"
+            "Check the folder permissions or set the NOELLE_HOME environment variable to a writable folder.")
+        return 1
+    _apply_environment()
+
     ctx = build_context()
     window = MainWindow(ctx)
     window.show()
-    ctx.runtime.start()
+    if ctx.settings.get("runtime.autostart", False):
+        ctx.runtime.start()
     ctx.hardware.start()
     window.start()
     from noelle.app.ui.setup_assistant import run_assistant, should_run

@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         from noelle.app.main import run
 
         return run(argv)
-    if argv[0] not in ("worker", "server", "download", "pyrun"):
+    if argv[0] not in ("worker", "server", "download", "pyrun", "ui", "setup"):
         _attach_windows_console()
     parser = build_parser()
     args = parser.parse_args(argv)

@@ -498,6 +498,13 @@ def _cmd_load(worker: Worker, ctx: JobContext) -> None:
     spec = worker.spec(ctx.payload, "text-generation")
     already = worker.models.get(spec.key(worker.models.resolve_device(spec))) is not None
     loaded = worker.models.ensure(spec, on_status=lambda msg: ctx.status("load", msg))
+    if ctx.stop_event.is_set():
+        # A load cannot be interrupted mid-flight, but a cancelled request must not leave the
+        # model resident and must not report success.
+        worker.models.unload(loaded.key)
+        from noelle.runtime.errors import Cancelled
+
+        raise Cancelled("The model load was cancelled.")
     ctx.emit(Event.RESULT, {"model": loaded.describe(), "already_loaded": already})
 
 

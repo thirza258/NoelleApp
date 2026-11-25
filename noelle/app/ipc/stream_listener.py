@@ -27,6 +27,8 @@ class StreamListener(QThread):
         self._running = True
 
     def send(self, frame: bytes) -> None:
+        if not self._running:
+            return  # the socket is gone (or stopping); callers fail their pending requests instead of queueing forever
         self._outgoing.put(frame)
 
     def stop(self, timeout_ms: int = 2000) -> None:
@@ -42,6 +44,7 @@ class StreamListener(QThread):
         try:
             sock.connect(self._endpoint)
         except zmq.ZMQError as exc:
+            self._running = False
             self.connection_error.emit(str(exc))
             sock.close(linger=0)
             return
@@ -69,6 +72,8 @@ class StreamListener(QThread):
                         continue
                     self.message_received.emit(message)
         except zmq.ZMQError as exc:
+            self._running = False
             self.connection_error.emit(str(exc))
         finally:
+            self._running = False
             sock.close(linger=0)

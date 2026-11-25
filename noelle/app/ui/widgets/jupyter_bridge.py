@@ -8,6 +8,7 @@ the current model.
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 from typing import Any
 
@@ -15,12 +16,36 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from noelle.app import theme
 from noelle.app.context import AppContext
+from noelle.app.services.task_runner import runner
 from noelle.app.ui.widgets.common import Banner, EmptyState, button, label
 from noelle.runtime.client import build_worker_env
+
+log = logging.getLogger("noelle.notebook")
 
 
 def jupyter_available() -> bool:
     return all(importlib.util.find_spec(name) is not None for name in ("qtconsole", "ipykernel", "jupyter_client"))
+
+
+def _start_kernel_blocking(manager: Any, env: dict[str, str]) -> None:
+    """Runs on the thread pool: starting a kernel waits for its connection file."""
+    manager.start_kernel(env=env)
+
+
+def _console_class() -> Any:
+    from qtconsole.rich_jupyter_widget import RichJupyterWidget
+
+    return RichJupyterWidget
+
+
+def _stop_manager(manager: Any) -> None:
+    if manager is None:
+        return
+    try:
+        if getattr(manager, "has_kernel", False):
+            manager.shutdown_kernel(now=True)
+    except Exception:  # noqa: BLE001 - shutdown is best-effort; the kernel process may already be gone
+        log.debug("Could not stop a notebook kernel", exc_info=True)
 
 
 class NotebookPanel(QWidget):
@@ -31,6 +56,9 @@ class NotebookPanel(QWidget):
         self.kernel_manager: Any = None
         self.kernel_client: Any = None
         self.console: Any = None
+        self._starting = False
+        self._disposed = False
+        self._pending_manager: Any = None
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 14, 18, 14)
         root.setSpacing(10)
@@ -55,6 +83,9 @@ class NotebookPanel(QWidget):
         self.memory_note = Banner("info", "Loading the model in the notebook uses extra memory on top of the runtime. "
                                           "Unload it from the runtime first if memory is tight.")
         root.addWidget(self.memory_note)
+        self.error_banner = Banner("danger", "")
+        self.error_banner.hide()
+        root.addWidget(self.error_banner)
         self.body = QVBoxLayout()
         root.addLayout(self.body, 1)
         if not jupyter_available():
@@ -75,46 +106,84 @@ class NotebookPanel(QWidget):
                 "model")
 
     def start_kernel(self) -> None:
-        if self.kernel_manager is not None or not jupyter_available():
+        if self._disposed or self._starting or self.kernel_manager is not None or not jupyter_available():
             return
-        from qtconsole.manager import QtKernelManager
-        from qtconsole.rich_jupyter_widget import RichJupyterWidget
-
+        try:
+            from qtconsole.manager import QtKernelManager
+        except Exception as exc:  # noqa: BLE001 - a broken optional dependency must not crash the page
+            self._kernel_failed(None, f"Jupyter could not be imported: {exc}")
+            return
         env = build_worker_env(None, hf_home=self.ctx.settings.get("storage.hf_home"), offline=True)
         env["NOELLE_HOME"] = os.environ.get("NOELLE_HOME", env.get("NOELLE_HOME", ""))
         if not env["NOELLE_HOME"]:
             env.pop("NOELLE_HOME")
         manager = QtKernelManager(kernel_name="python3")
-        manager.start_kernel(env=env)
-        client = manager.client()
-        client.start_channels()
-        console = RichJupyterWidget()
-        console.kernel_manager = manager
-        console.kernel_client = client
-        console.set_default_style(colors="linux" if theme.IS_DARK else "lightbg")
-        console.setStyleSheet(f"background: {theme.CODE_BG};")
+        self._starting = True
+        self._pending_manager = manager
+        self.error_banner.hide()
+        self.start_btn.setEnabled(False)
+        self.start_btn.setText("Starting kernel…")
+        runner().submit(_start_kernel_blocking, manager, env,
+                        on_result=lambda _value: self._kernel_started(manager),
+                        on_error=lambda message: self._kernel_failed(manager, message))
+
+    def _kernel_started(self, manager: Any) -> None:
+        self._starting = False
+        if self._disposed or manager is not self._pending_manager:
+            _stop_manager(manager)
+            return
+        self._pending_manager = None
+        try:
+            client = manager.client()
+            client.start_channels()
+            console = _console_class()()
+            console.kernel_manager = manager
+            console.kernel_client = client
+            console.set_default_style(colors="linux" if theme.IS_DARK else "lightbg")
+            console.setStyleSheet(f"background: {theme.CODE_BG};")
+        except Exception as exc:  # noqa: BLE001 - surface instead of freezing on "Starting kernel…"
+            log.exception("Could not attach the notebook console")
+            self._kernel_failed(manager, str(exc))
+            return
         self.kernel_manager, self.kernel_client, self.console = manager, client, console
         self.body.addWidget(console, 1)
         self.start_btn.setEnabled(False)
+        self.start_btn.setText("Start kernel")
         self.snippet_btn.setEnabled(True)
         self.stop_btn.setEnabled(True)
         console._append_plain_text("Kernel ready. 'Insert load snippet' loads the current model.\n", before_prompt=True)
+
+    def _kernel_failed(self, manager: Any, message: str) -> None:
+        self._starting = False
+        if manager is self._pending_manager:
+            self._pending_manager = None
+        _stop_manager(manager)
+        if self._disposed:
+            return
+        self.start_btn.setEnabled(jupyter_available())
+        self.start_btn.setText("Start kernel")
+        self.error_banner.set_text(
+            f"<b>The notebook kernel could not start.</b> {message} "
+            'Install the Jupyter extra with: <code>pip install "noelle[jupyter]"</code>')
+        self.error_banner.show()
+        self.ctx.toast("The notebook kernel could not start.", "error")
 
     def insert_snippet(self) -> None:
         if self.console is not None:
             self.console.input_buffer = self._snippet()
 
     def shutdown(self) -> None:
+        self._disposed = True
+        self._starting = False
+        pending, self._pending_manager = self._pending_manager, None
+        _stop_manager(pending)
         if self.kernel_client is not None:
             try:
                 self.kernel_client.stop_channels()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - channels may already be closed by a crashed kernel
+                log.debug("Could not stop notebook channels", exc_info=True)
         if self.kernel_manager is not None:
-            try:
-                self.kernel_manager.shutdown_kernel(now=True)
-            except Exception:
-                pass
+            _stop_manager(self.kernel_manager)
         if self.console is not None:
             self.console.setParent(None)
             self.console.deleteLater()

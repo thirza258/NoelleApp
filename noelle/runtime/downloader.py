@@ -51,8 +51,11 @@ _PREFERRED_GGUF = ("Q4_K_M", "q4_k_m", "Q4_K_S", "Q5_K_M", "Q4_0")
 
 
 def emit(event: dict[str, Any]) -> None:
+    from noelle.runtime.errors import redact_secrets
+
+    clean = {key: redact_secrets(value) if isinstance(value, str) else value for key, value in event.items()}
     with _print_lock:
-        sys.stdout.write(json.dumps(event, separators=(",", ":")) + "\n")
+        sys.stdout.write(json.dumps(clean, separators=(",", ":")) + "\n")
         sys.stdout.flush()
 
 
@@ -215,6 +218,21 @@ def repo_cache_folder(cache_dir: Path, repo_id: str, repo_type: str = "model") -
     return cache_dir / f"{repo_type}s--{repo_id.replace('/', '--')}"
 
 
+def is_cached(entry: RepoFile, *, cache_dir: Path, repo_id: str, local_dir: Path | None = None) -> bool:
+    """True only for a complete copy: an interrupted blob with the right name is not usable."""
+    try:
+        if local_dir is not None:
+            local = local_dir / entry.name
+            return local.is_file() and (entry.size is None or local.stat().st_size == entry.size)
+        blob_name = entry.sha256 or entry.blob_id
+        if not blob_name:
+            return False
+        blob = repo_cache_folder(cache_dir, repo_id) / "blobs" / blob_name
+        return blob.is_file() and (entry.size is None or blob.stat().st_size == entry.size)
+    except OSError:
+        return False
+
+
 def clean_stale_incomplete(folder: Path) -> int:
     """Remove ``*.incomplete`` temp files left by a killed download of this repo."""
     removed = 0
@@ -256,14 +274,11 @@ def run(args: argparse.Namespace) -> int:
     target_root = Path(args.local_dir).expanduser() if args.local_dir else cache_dir
     target_root.mkdir(parents=True, exist_ok=True)
 
-    def is_cached(entry: RepoFile) -> bool:
-        if args.local_dir:
-            local = target_root / entry.name
-            return local.is_file() and (entry.size is None or local.stat().st_size == entry.size)
-        blob_name = entry.sha256 or entry.blob_id
-        return bool(blob_name) and (repo_cache_folder(cache_dir, args.repo_id) / "blobs" / blob_name).is_file()
+    def cached(entry: RepoFile) -> bool:
+        return is_cached(entry, cache_dir=cache_dir, repo_id=args.repo_id,
+                         local_dir=target_root if args.local_dir else None)
 
-    plan = [{"name": f.name, "size": f.size, "cached": is_cached(f)} for f in selected]
+    plan = [{"name": f.name, "size": f.size, "cached": cached(f)} for f in selected]
     total = sum(f.size or 0 for f in selected)
     needed = sum((f.size or 0) for f, p in zip(selected, plan) if not p["cached"])
     emit({"type": "plan", "repo_id": args.repo_id, "revision": args.revision or "main", "commit": commit,

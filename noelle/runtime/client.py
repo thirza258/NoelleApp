@@ -10,6 +10,7 @@ Safe to import from the UI: no torch, no Qt.
 from __future__ import annotations
 
 import os
+import queue
 import secrets
 import subprocess
 import sys
@@ -30,6 +31,7 @@ from noelle.runtime.protocol import (
     Event,
     decode,
     make_request,
+    parse_ready_port,
 )
 
 PACKAGE_PARENT = str(Path(__file__).resolve().parents[2])
@@ -47,7 +49,14 @@ def worker_command(python: str | None = None) -> list[str]:
     """Command prefix that runs ``noelle <subcommand>`` in a child process."""
     if getattr(sys, "frozen", False):  # PyInstaller bundle: the executable is the dispatcher
         return [sys.executable]
-    return [python or sys.executable, "-m", "noelle"]
+    exe = python or sys.executable
+    if sys.platform == "win32":
+        path = Path(exe)
+        if path.name.lower() == "python.exe":
+            pythonw = path.with_name("pythonw.exe")
+            if pythonw.is_file():
+                exe = str(pythonw)
+    return [exe, "-m", "noelle"]
 
 
 def build_worker_env(token: str | None = None, *, hf_home: str | None = None, offline: bool = True,
@@ -92,14 +101,21 @@ class WorkerProcess:
         if self.process.poll() is None:
             try:
                 self.client().call(Command.SHUTDOWN, timeout=3.0)
-            except Exception:
+            except Exception:  # noqa: BLE001 - the worker may already be gone; fall back to signals
                 pass
             try:
-                return self.process.wait(timeout=timeout)
+                code = self.process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-                return self.process.wait(timeout=5)
-        return self.process.returncode
+                code = self.process.wait(timeout=5)
+        else:
+            code = self.process.returncode
+        if self.process.stdout is not None:
+            try:
+                self.process.stdout.close()
+            except (OSError, ValueError):
+                pass
+        return code
 
 
 def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None = None,
@@ -121,30 +137,74 @@ def spawn_worker(*, python: str | None = None, port: int = 0, device: str | None
     log_path = log_path or (paths.logs_dir() / "worker-stderr.log")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stderr: IO[str] = open(log_path, "a", encoding="utf-8")  # noqa: SIM115 - owned by the child
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=stderr, env=env, text=True, bufsize=1)
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=stderr, env=env, text=True, bufsize=1, **kwargs)
     stderr.close()
-    deadline = time.monotonic() + ready_timeout
     assert proc.stdout is not None
-    while True:
-        if time.monotonic() > deadline:
-            proc.kill()
-            raise TimeoutError("worker did not report ready in time")
-        line = proc.stdout.readline()
-        if not line:
-            code = proc.wait(timeout=5)
-            raise RuntimeError(f"worker exited during startup (code {code}); see {log_path}")
-        if line.startswith(READY_PREFIX):
-            fields = dict(part.split("=", 1) for part in line.split()[1:] if "=" in part)
-            port = int(fields["port"])
-            break
-    threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
+    stream = proc.stdout
+    lines: queue.Queue[str | None] = queue.Queue()
+    collecting = threading.Event()
+    collecting.set()
+
+    def read_lines() -> None:
+        try:
+            for line in stream:
+                if collecting.is_set():
+                    lines.put(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            lines.put(None)
+
+    # A reader thread makes ready_timeout real: readline() alone can block forever.
+    threading.Thread(target=read_lines, name="noelle-worker-stdout", daemon=True).start()
+    deadline = time.monotonic() + ready_timeout
+    port: int | None = None
+    try:
+        while port is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"worker did not report ready within {ready_timeout:.0f}s; see {log_path}")
+            try:
+                line = lines.get(timeout=min(remaining, 0.25))
+            except queue.Empty:
+                continue
+            if line is None:
+                code = _wait_quietly(proc)
+                raise RuntimeError(f"worker exited during startup (code {code}); see {log_path}")
+            if line.startswith(READY_PREFIX):
+                port = parse_ready_port(line)
+                if port is None:
+                    raise RuntimeError(f"worker sent an invalid ready line: {line.strip()[:200]}; see {log_path}")
+        if proc.poll() is not None:
+            raise RuntimeError(f"worker exited immediately after reporting ready (code {proc.returncode}); "
+                               f"see {log_path}")
+    except BaseException:
+        _terminate_process(proc, stream)
+        raise
+    collecting.clear()  # keep draining stdout, but do not grow an unbounded queue
     return WorkerProcess(proc, port, token)
 
 
-def _drain(stream: IO[str]) -> None:
+def _wait_quietly(proc: subprocess.Popen[str], timeout: float = 5.0) -> int | None:
     try:
-        for _ in stream:
-            pass
+        return proc.wait(timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _terminate_process(proc: subprocess.Popen[str], stream: IO[str]) -> None:
+    """Kill and reap a child that failed to start, and close our end of its pipe."""
+    try:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5.0)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        stream.close()
     except (OSError, ValueError):
         pass
 

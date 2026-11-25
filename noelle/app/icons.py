@@ -134,12 +134,10 @@ def app_icon() -> QIcon:
     """Rounded violet tile with a stylised 'N' and spark — used for the window icon."""
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
-        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
-        '<stop offset="0" stop-color="#A193FF"/><stop offset="1" stop-color="#5B47E0"/></linearGradient></defs>'
-        '<rect x="2" y="2" width="60" height="60" rx="16" fill="url(#g)"/>'
-        '<path d="M19 45V19l26 26V19" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" '
+        '<rect x="2" y="2" width="60" height="60" rx="16" fill="#FFC700"/>'
+        '<path d="M19 45V19l26 26V19" fill="none" stroke="#0B0B0D" stroke-width="6" stroke-linecap="round" '
         'stroke-linejoin="round"/>'
-        '<circle cx="47" cy="15" r="4" fill="#FFE9A8"/></svg>'
+        '<circle cx="47" cy="15" r="4" fill="#0B0B0D"/></svg>'
     ).encode()
     renderer = QSvgRenderer(QByteArray(svg))
     qicon = QIcon()

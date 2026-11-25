@@ -270,7 +270,10 @@ def _terminate(proc: subprocess.Popen[str], grace: float = 5.0) -> None:
                 proc.kill()
         except OSError:
             pass
-        proc.wait(timeout=5)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass  # it is out of our hands (e.g. uninterruptible I/O); do not mask the caller's error
 
 
 def run_streaming(cmd: list[str], *, on_line: OnLine | None = None, stop_event: threading.Event | None = None,
@@ -284,6 +287,8 @@ def run_streaming(cmd: list[str], *, on_line: OnLine | None = None, stop_event: 
     Returns ``(exit_code, last_lines)``.
     """
     extra: dict[str, Any] = {"start_new_session": True} if os.name == "posix" else {}
+    if sys.platform == "win32":
+        extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     proc = subprocess.Popen([str(part) for part in cmd], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", bufsize=1,
                             env=env, cwd=cwd, **extra)
@@ -429,8 +434,11 @@ LOCK_FORMAT = 1
 
 def freeze(python: str | os.PathLike[str], timeout: float = 120.0) -> list[str]:
     """``pip freeze`` of an interpreter, without editable/local installs of Noelle itself."""
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     result = subprocess.run([str(python), "-m", "pip", "freeze", "--disable-pip-version-check"], capture_output=True,
-                            text=True, timeout=timeout, env=_pip_env())
+                            text=True, timeout=timeout, env=_pip_env(), **kwargs)
     if result.returncode != 0:
         raise EnvironmentManagerError(f"pip freeze failed: {_last(result.stderr.splitlines())}")
     pins = []
@@ -452,8 +460,11 @@ def export_environment(name: str) -> dict[str, Any]:
     if manifest is None:
         raise EnvironmentManagerError(f"No environment named '{name}'.")
     interpreter = python_for(name)
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     version = subprocess.run([str(interpreter), "-c", "import sys; print(sys.version.split()[0])"],
-                             capture_output=True, text=True, timeout=60).stdout.strip()
+                             capture_output=True, text=True, timeout=60, **kwargs).stdout.strip()
     return {
         "noelle_environment": LOCK_FORMAT,
         "name": name,
@@ -576,10 +587,13 @@ def verify_environment(name: str, *, timeout: float = 600.0) -> dict[str, Any]:
     manifest = read_manifest(root)
     modules = modules_for((manifest or {}).get("profiles") or ["base"])
     env = build_worker_env(None, offline=True)
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     try:
         proc = subprocess.run([str(interpreter), "-c", _VERIFY_SCRIPT, json.dumps(modules)], capture_output=True,
                               text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env,
-                              stdin=subprocess.DEVNULL)
+                              stdin=subprocess.DEVNULL, **kwargs)
         stdout, stderr, code = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired:
         stdout, stderr, code = "", f"verification timed out after {timeout:.0f}s", -1

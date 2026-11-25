@@ -115,6 +115,7 @@ class ModelCardGrid(QWidget):
         self._downloaded: set[str] = set()
         self._has_more = False
         self._loading = False
+        self._spec_filter: str = "all"
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -151,6 +152,32 @@ class ModelCardGrid(QWidget):
     def columns(self) -> int:
         return self._columns
 
+    @property
+    def spec_filter(self) -> str:
+        return self._spec_filter
+
+    def set_spec_filter(self, filter_key: str) -> None:
+        if self._spec_filter != filter_key:
+            self._spec_filter = filter_key
+            self._reflow(force=True)
+            self._update_footer()
+
+    def _card_matches_spec(self, card: ModelCard) -> bool:
+        if self._spec_filter == "all":
+            return True
+        compat = self._compat(card.model)
+        if compat is None:
+            return False
+        if self._spec_filter == "supported":
+            return compat.level in ("green", "yellow")
+        if self._spec_filter == "green":
+            return compat.level == "green"
+        if self._spec_filter == "yellow":
+            return compat.level == "yellow"
+        if self._spec_filter == "red":
+            return compat.level == "red"
+        return True
+
     def set_compat_function(self, fn: Callable[[Any], Compatibility | None]) -> None:
         self._compat = fn
 
@@ -179,6 +206,9 @@ class ModelCardGrid(QWidget):
     def refresh_badges(self) -> None:
         for card in self._cards:
             card.set_compat(self._compat(card.model))
+        if self._spec_filter != "all":
+            self._reflow(force=True)
+            self._update_footer()
 
     def set_loading(self, loading: bool) -> None:
         self._loading = loading
@@ -205,12 +235,15 @@ class ModelCardGrid(QWidget):
     def _update_footer(self) -> None:
         if self._loading:
             return
-        if not self._cards:
+        visible = [c for c in self._cards if self._card_matches_spec(c)]
+        if not visible:
             self.footer_text.setText("No models match these filters.")
         elif not self._has_more:
-            self.footer_text.setText(f"{len(self._cards)} models · end of results")
+            count_str = f"{len(visible)} models" if len(visible) != len(self._cards) else f"{len(self._cards)} models"
+            self.footer_text.setText(f"{count_str} · end of results")
         else:
-            self.footer_text.setText(f"{len(self._cards)} models")
+            count_str = f"{len(visible)} models" if len(visible) != len(self._cards) else f"{len(self._cards)} models"
+            self.footer_text.setText(count_str)
 
     def resizeEvent(self, event: Any) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -227,8 +260,13 @@ class ModelCardGrid(QWidget):
         self._columns = columns
         while self.grid.count():
             self.grid.takeAt(0)
-        for index, card in enumerate(self._cards):
+        visible_cards = [c for c in self._cards if self._card_matches_spec(c)]
+        for index, card in enumerate(visible_cards):
             self.grid.addWidget(card, index // columns, index % columns)
+            card.show()
+        for card in self._cards:
+            if card not in visible_cards:
+                card.hide()
         for column in range(max(columns, self.grid.columnCount())):
             self.grid.setColumnStretch(column, 1 if column < columns else 0)
 
