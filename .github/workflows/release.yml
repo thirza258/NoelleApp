@@ -40,10 +40,10 @@ jobs:
       - name: Inno Setup (Windows)
         if: runner.os == 'Windows'
         run: choco install innosetup --no-progress -y
-      - name: PyTorch (CUDA for Windows, CPU for Linux keeps installer < 2GB)
+      - name: PyTorch (CUDA 13.2 for Windows, CPU for Linux keeps installer < 2GB)
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cu132
           elif [ "$RUNNER_OS" = "Linux" ]; then
             python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           fi

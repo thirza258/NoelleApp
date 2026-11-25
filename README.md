@@ -76,7 +76,11 @@ python3 -m venv .venv
 ```
 
 Requires Python ≥ 3.11 (developed on 3.14, PySide6 6.12, torch 2.15, transformers 5).
-On Linux/Windows with NVIDIA GPUs, install the CUDA build of PyTorch first.
+On Linux/Windows with NVIDIA GPUs, install the CUDA 13.2 build of PyTorch first:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu132
+```
 
 ### Command line
 
