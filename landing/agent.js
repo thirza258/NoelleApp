@@ -8,7 +8,7 @@
   'use strict';
 
   var NoelleAgent = {
-    version: '1.1.0',
+    version: '1.1.1',
 
     getInfo: function () {
       return {
