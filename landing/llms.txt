@@ -95,3 +95,4 @@
 - Troubleshooting: https://noelle.nevatal.id/docs/troubleshooting/
 - Privacy Policy: https://noelle.nevatal.id/docs/privacy/
 - Terms of Service: https://noelle.nevatal.id/docs/terms/
+- Changelog: https://noelle.nevatal.id/docs/changelog/

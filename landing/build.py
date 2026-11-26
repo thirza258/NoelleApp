@@ -216,6 +216,7 @@ def sitemap_footer(pages: list[Page], from_page: Page | None) -> str:
         <span>© <span data-year></span> Noelle · MIT License</span>
         <span><a href="{relative(from_page, 'docs/privacy/')}">Privacy Policy</a> ·
           <a href="{relative(from_page, 'docs/terms/')}">Terms of Service</a> ·
+          <a href="{relative(from_page, 'docs/changelog/')}">Changelog</a> ·
           <a href="{relative(from_page, 'llms.txt')}">llms.txt</a> ·
           <a href="{relative(from_page, 'auth.md')}">auth.md</a> ·
           <a href="{home}#download" data-link="source">Source code</a> ·
