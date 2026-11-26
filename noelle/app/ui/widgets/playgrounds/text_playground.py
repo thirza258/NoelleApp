@@ -29,7 +29,7 @@ from noelle import paths
 from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.i18n import tr
-from noelle.app.services.provider_stream import ProviderStream
+from noelle.app.services.provider_stream import ConsentGate, ProviderStream
 from noelle.app.services.voice_session import VoiceSession
 from noelle.app.ui.widgets.audio_visualizer import MicRecorder, request_microphone
 from noelle.app.ui.widgets.chat_canvas import ChatCanvas, MessageView
@@ -295,6 +295,8 @@ class TextPlayground(QWidget):
 
         self.recorder = MicRecorder(self)
         self.recorder.error.connect(lambda message: self.ctx.toast(message, "error"))
+        self.consent_gate = ConsentGate(self)
+        self.consent_gate.requested.connect(self._ask_cloud_consent)
         self.voice = VoiceSession(ctx, self)
         self.voice.state_changed.connect(self._on_voice_state)
         self.voice.transcript.connect(self._on_voice_transcript)
@@ -609,6 +611,9 @@ class TextPlayground(QWidget):
             names.append("web_search")
         return names
 
+    def _ask_cloud_consent(self, reason: str, destination: str) -> None:
+        self.consent_gate.answer(self._cloud_consent(reason, destination))
+
     def _cloud_consent(self, reason: str, destination: str) -> bool:
         if self.ctx.settings.get("privacy.local_only", False):
             return False
@@ -623,7 +628,7 @@ class TextPlayground(QWidget):
         view = self.canvas.add_message("assistant", "", self.display_name())
         view.set_busy(True, "waiting for the runtime…")
         self._current = view
-        provider = self.ctx.hybrid_provider(consent=self._cloud_consent)
+        provider = self.ctx.hybrid_provider(consent=self.consent_gate.decide)
         system_prompt = self.system_prompt.toPlainText().strip() or None
         enabled = self._enabled_tools()
         if enabled:

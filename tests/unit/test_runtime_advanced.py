@@ -103,6 +103,14 @@ def test_hybrid_stream_does_not_mix_partial_local_and_cloud() -> None:
     assert provider.last_route == "local"  # an error after tokens must not append a cloud answer
 
 
+def test_consent_gate_bridges_worker_decision() -> None:
+    from noelle.app.services.provider_stream import ConsentGate
+
+    gate = ConsentGate()
+    gate.requested.connect(lambda _reason, _destination: gate.answer(True))
+    assert gate.decide("no VRAM", "OpenAI") is True
+
+
 def test_cloud_provider_requires_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
     from noelle.providers import hybrid as hybrid_module
 

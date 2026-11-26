@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
@@ -49,6 +50,40 @@ class _Task(QRunnable):
                                       "suggested_actions": ["retry"]})
 
 
+class ConsentGate(QObject):
+    """Ask the GUI for cloud-egress consent from a worker thread without touching widgets there.
+
+    ``decide`` blocks the provider task; the signal is delivered to the GUI thread (queued),
+    where a dialog calls :meth:`answer`.
+    """
+
+    requested = Signal(str, str)
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._lock = threading.Lock()
+        self._pending: tuple[dict[str, Any], threading.Event] | None = None
+
+    def decide(self, reason: str, destination: str, timeout: float = 180.0) -> bool:
+        event = threading.Event()
+        box: dict[str, Any] = {"allowed": False}
+        with self._lock:
+            self._pending = (box, event)
+        self.requested.emit(reason, destination)
+        event.wait(timeout)
+        with self._lock:
+            self._pending = None
+        return bool(box.get("allowed"))
+
+    def answer(self, allowed: bool) -> None:
+        with self._lock:
+            pending = self._pending
+        if pending is not None:
+            box, event = pending
+            box["allowed"] = bool(allowed)
+            event.set()
+
+
 class ProviderStream(QObject):
     """Handle for one provider request; token/finished/failed are re-emitted on the GUI thread."""
 
@@ -66,9 +101,11 @@ class ProviderStream(QObject):
             self.cancel()
         self.provider = provider
         task = _Task(provider, messages, kwargs)
-        task.signals.token.connect(self.token)
-        task.signals.finished.connect(self._on_finished)
-        task.signals.failed.connect(self._on_failed)
+        # Bind the task into each slot: a cancelled task's late signal must not clear or
+        # append to a newer request.
+        task.signals.token.connect(lambda text, t=task: self._forward_token(t, text))
+        task.signals.finished.connect(lambda text, metrics, t=task: self._forward_finished(t, text, metrics))
+        task.signals.failed.connect(lambda payload, t=task: self._forward_failed(t, payload))
         self._task = task
         QThreadPool.globalInstance().start(task)
 
@@ -87,10 +124,16 @@ class ProviderStream(QObject):
     def running(self) -> bool:
         return self._task is not None
 
-    def _on_finished(self, text: str, metrics: dict) -> None:
-        self._task = None
-        self.finished.emit(text, metrics)
+    def _forward_token(self, task: _Task, text: str) -> None:
+        if self._task is task:
+            self.token.emit(text)
 
-    def _on_failed(self, payload: dict) -> None:
-        self._task = None
-        self.failed.emit(payload)
+    def _forward_finished(self, task: _Task, text: str, metrics: dict) -> None:
+        if self._task is task:
+            self._task = None
+            self.finished.emit(text, metrics)
+
+    def _forward_failed(self, task: _Task, payload: dict) -> None:
+        if self._task is task:
+            self._task = None
+            self.failed.emit(payload)
