@@ -67,6 +67,8 @@ class ModelSpec:
     engine: str | None = None
     library_name: str | None = None
     gated: bool = False
+    language: str | None = None
+    speculative: dict[str, Any] = field(default_factory=dict)
     force: bool = False
 
     @classmethod
@@ -86,6 +88,8 @@ class ModelSpec:
             engine=data.get("engine") or None,
             library_name=data.get("library_name") or None,
             gated=bool(data.get("gated", False)),
+            language=data.get("language") or data.get("voice_language") or None,
+            speculative=dict(data.get("speculative") or {}),
             force=bool(data.get("force", False)),
         )
 
@@ -389,7 +393,8 @@ class ModelManager:
             if engine in ("gguf", "llama_cpp", "llama_server"):
                 return self._load_gguf(spec, source, device)
             return (TransformersTextEngine.load(source, device=device, precision=spec.precision, trust_remote_code=trc,
-                                                revision=None, gguf_file=spec.gguf_file), "transformers")
+                                                revision=None, gguf_file=spec.gguf_file,
+                                                speculative=spec.speculative), "transformers")
         if family == tasks.VISION:
             return VisionLanguageEngine.load(source, device=device, precision=spec.precision,
                                              trust_remote_code=trc), "transformers-vlm"
@@ -397,15 +402,32 @@ class ModelManager:
             return VisionPipelineEngine.load(source, task=spec.task, device=device,
                                              trust_remote_code=trc), "transformers-pipeline"
         if family == tasks.ASR:
+            if (spec.library_name or "").lower() in ("faster-whisper", "ctranslate2"):
+                from noelle.runtime.native import FasterWhisperEngine
+
+                return FasterWhisperEngine.load(source, device=device, precision=spec.precision), "faster-whisper"
             return AsrEngine.load(source, device=device, precision=spec.precision,
                                   trust_remote_code=trc), "transformers-asr"
         if family == tasks.TTS:
+            if (spec.library_name or "").lower() == "kokoro":
+                from noelle.runtime.native import KokoroEngine
+
+                return KokoroEngine.load(source, device=device, language=spec.language or "en"), "kokoro"
             return TtsEngine.load(source, device=device, precision=spec.precision,
                                   trust_remote_code=trc), "transformers-tts"
         if family == tasks.DIFFUSION:
+            if not (Path(source) / "model_index.json").is_file():
+                from noelle.runtime.native import SingleFileDiffusionEngine
+
+                return SingleFileDiffusionEngine.load(source, device=device, precision=spec.precision,
+                                                      trust_remote_code=trc), "diffusers-single-file"
             return DiffusionEngine.load(source, device=device, precision=spec.precision,
                                         trust_remote_code=trc), "diffusers"
         if family == tasks.EMBEDDING:
+            if (spec.library_name or "").lower() == "model2vec":
+                from noelle.runtime.native import Model2VecEngine
+
+                return Model2VecEngine.load(source, device=device), "model2vec"
             return EmbeddingEngine.load(source, device=device, trust_remote_code=trc), "sentence-transformers"
         raise BadRequest(f"No engine for task family '{family}' (rev={rev})")
 

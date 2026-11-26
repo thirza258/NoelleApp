@@ -424,6 +424,10 @@ BACKEND_LABELS = {
     "diffusers": "diffusers",
     "sentence-transformers": "sentence-transformers",
     "transformers": "transformers",
+    "kokoro": "Kokoro TTS",
+    "faster-whisper": "faster-whisper (CTranslate2)",
+    "model2vec": "Model2Vec",
+    "diffusion-single-file": "diffusers single-file checkpoints",
 }
 
 
@@ -458,6 +462,10 @@ def detect_backends() -> dict[str, bool]:
         "gptq": _has_module("gptqmodel"),
         "diffusers": _has_module("diffusers"),
         "sentence-transformers": _has_module("sentence_transformers"),
+        "kokoro": _has_module("kokoro"),
+        "faster-whisper": _has_module("faster_whisper"),
+        "model2vec": _has_module("model2vec"),
+        "diffusion-single-file": _has_module("diffusers"),
     }
 
 

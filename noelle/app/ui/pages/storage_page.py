@@ -115,6 +115,10 @@ class StoragePage(QWidget):
                           tooltip="Import GGUF models already installed by another app (read-only, no copying)")
         external.clicked.connect(self._import_external)
         head.addWidget(external)
+        updates = button("Check model updates", "refresh", "ghost",
+                         tooltip="Compare downloaded models with the current Hub revision (offline-safe failures)")
+        updates.clicked.connect(self._check_model_updates)
+        head.addWidget(updates)
         relocate = button("Relocate cache…", "folder", "primary")
         relocate.clicked.connect(self._relocate)
         head.addWidget(relocate)
@@ -228,7 +232,8 @@ class StoragePage(QWidget):
 
     def _render(self, usage: dict[str, int], disk: dict[str, int]) -> None:
         report = self.report
-        registered = {r.repo_id for r in self.ctx.registry.list_models()}
+        records = {r.repo_id: r for r in self.ctx.registry.list_models()}
+        registered = set(records)
         active = self.ctx.downloads.active_repos()
         self.tile_cache.set(format_bytes(report.total_size), f"{len(report.repos)} repositories · {report.scanner} scan")
         self.tile_reclaim.set(format_bytes(report.reclaimable_bytes),
@@ -251,6 +256,8 @@ class StoragePage(QWidget):
                 status.append("downloading")
             if repo.repo_id in registered:
                 status.append("in Noelle")
+                if (records[repo.repo_id].metadata or {}).get("update_sha"):
+                    status.append("↓ update available")
             detached = sum(1 for r in repo.revisions if r.detached)
             if detached:
                 status.append(f"{detached} old revision{'s' if detached > 1 else ''}")
@@ -367,6 +374,31 @@ class StoragePage(QWidget):
 
         runner().submit(work, on_result=done,
                         on_error=lambda message: QMessageBox.warning(self, "External models", message))
+
+    def _check_model_updates(self) -> None:
+        from noelle.app.services import update_checker
+
+        if self.ctx.settings.get("privacy.local_only", False):
+            self.ctx.toast("Update checks are disabled in Local-only mode.", "info")
+            return
+        records = [r for r in self.ctx.registry.list_models() if r.source == "hub"]
+        self.spinner.start()
+
+        def done(updates: list[Any]) -> None:
+            self.spinner.stop()
+            for update in updates:
+                record = self.ctx.registry.get_model(update.repo_id)
+                if record is not None:
+                    record.metadata = {**(record.metadata or {}), "update_sha": update.latest_sha}
+                    self.ctx.registry.upsert_model(record)
+            self.ctx.toast(f"{len(updates)} model update(s) available." if updates else
+                           "All downloaded Hub models are up to date.", "info")
+            self.rescan()
+
+        runner().submit(update_checker.check_models, records, api=self.ctx.hf._api(),
+                        on_result=done,
+                        on_error=lambda message: (self.spinner.stop(),
+                                                  QMessageBox.warning(self, "Model updates", message)))
 
     def _after_delete(self, message: str) -> None:
         removed = self.ctx.registry.prune_missing()

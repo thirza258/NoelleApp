@@ -136,6 +136,10 @@ class VisionPlayground(QWidget):
         paste_btn.setToolTip("Use an image from the clipboard (Ctrl/Cmd+V screenshots)")
         paste_btn.clicked.connect(self._paste)
         row.addWidget(paste_btn)
+        camera_btn = button("Camera", "image")
+        camera_btn.setToolTip("Capture a photo from the webcam (the camera stays off until you click)")
+        camera_btn.clicked.connect(self._camera)
+        row.addWidget(camera_btn)
         self.image_info = label("", "faint")
         row.addWidget(self.image_info, 1)
         left_layout.addLayout(row)
@@ -196,6 +200,13 @@ class VisionPlayground(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Open image", "", IMAGE_FILTER)
         if path:
             self.set_image(path)
+
+    def _camera(self) -> None:
+        from noelle.app.ui.widgets.camera_dialog import CameraDialog
+
+        dialog = CameraDialog(self)
+        if dialog.exec() and dialog.image_path:
+            self.set_image(dialog.image_path)
 
     def _paste(self) -> None:
         image = QGuiApplication.clipboard().image()

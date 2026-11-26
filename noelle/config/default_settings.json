@@ -72,6 +72,14 @@
     "enabled": false,
     "require_confirmation": true
   },
+  "providers": {
+    "chat": "local",
+    "vision": "local",
+    "embedding": "local",
+    "tts": "local",
+    "stt": "local",
+    "image_generation": "local"
+  },
   "rag": {
     "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
     "chunk_tokens": 512,
@@ -105,6 +113,7 @@
   },
   "ui": {
     "theme": "system",
+    "language": "system",
     "use_webengine": false,
     "hero_collapse_threshold": 120,
     "hero_width": 380,

@@ -198,11 +198,14 @@ def _model_kwargs_for(device: str, precision: str) -> dict[str, Any]:
 class TransformersTextEngine:
     engine = "transformers"
 
-    def __init__(self, model: Any, tokenizer: Any, device: str, config: dict[str, Any]) -> None:
+    def __init__(self, model: Any, tokenizer: Any, device: str, config: dict[str, Any],
+                 speculative: Any = None, assistant_model: Any = None) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
         self.config = config
+        self.speculative = speculative
+        self.assistant_model = assistant_model
         window = context_limit(config)
         if not window:
             tok_max = getattr(tokenizer, "model_max_length", None)
@@ -212,7 +215,8 @@ class TransformersTextEngine:
 
     @classmethod
     def load(cls, source: str, *, device: str, precision: str = "auto", trust_remote_code: bool = False,
-             revision: str | None = None, gguf_file: str | None = None) -> TransformersTextEngine:
+             revision: str | None = None, gguf_file: str | None = None,
+             speculative: dict[str, Any] | None = None) -> TransformersTextEngine:
         from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
         common: dict[str, Any] = {"trust_remote_code": trust_remote_code}
@@ -228,7 +232,23 @@ class TransformersTextEngine:
         model.eval()
         if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
             tokenizer.pad_token = tokenizer.eos_token
-        return cls(model, tokenizer, device, config.to_dict())
+
+        from noelle.runtime.speculative import SpeculativeConfig, compatibility
+
+        spec = SpeculativeConfig.from_mapping(speculative)
+        assistant = None
+        if spec.mode == "draft" and spec.draft_model:
+            draft_config = AutoConfig.from_pretrained(spec.draft_model, trust_remote_code=trust_remote_code)
+            draft_tokenizer = AutoTokenizer.from_pretrained(spec.draft_model, trust_remote_code=trust_remote_code)
+            ok, reason = compatibility(config.to_dict(), draft_config.to_dict(),
+                                       target_tokenizer=tokenizer, draft_tokenizer=draft_tokenizer)
+            if not ok:
+                raise Unsupported(f"Speculative decoding is unavailable: {reason}",
+                                  hint="Choose a draft model with the same tokenizer, or use prompt lookup.")
+            assistant = AutoModelForCausalLM.from_pretrained(
+                spec.draft_model, trust_remote_code=trust_remote_code, **_model_kwargs_for(device, precision))
+            assistant.eval()
+        return cls(model, tokenizer, device, config.to_dict(), speculative=spec, assistant_model=assistant)
 
     # -- prompt handling -------------------------------------------------
     def encode_messages(self, msgs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -288,6 +308,10 @@ class TransformersTextEngine:
                       stopping_criteria=StoppingCriteriaList([_event_stop(stop_event)]))
         if params.stop:
             kwargs.update(stop_strings=params.stop, tokenizer=tokenizer)
+        if self.assistant_model is not None:
+            kwargs["assistant_model"] = self.assistant_model
+        elif self.speculative is not None and getattr(self.speculative, "mode", "off") == "prompt_lookup":
+            kwargs["prompt_lookup_num_tokens"] = int(getattr(self.speculative, "draft_tokens", 10))
         if params.seed is not None:
             torch.manual_seed(params.seed)
         devices.reset_peak(self.device)
@@ -322,6 +346,7 @@ class TransformersTextEngine:
     def release(self) -> None:
         self.model = None
         self.tokenizer = None
+        self.assistant_model = None
 
 
 # ---------------------------------------------------------------------------

@@ -35,7 +35,7 @@ from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.services import hf_client
 from noelle.app.services.task_runner import runner
-from noelle.app.ui.widgets.common import Banner, button, label
+from noelle.app.ui.widgets.common import Banner, button, divider, label
 
 RUNTIME_KEYS = ("runtime.device", "runtime.memory_budget_gb", "runtime.safety_headroom", "runtime.keep_models_loaded",
                 "runtime.offline", "runtime.environment")
@@ -62,6 +62,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._environments_tab(), "Environments")
         tabs.addTab(self._storage_tab(), "Storage")
         tabs.addTab(self._grounding_tab(), "Grounding")
+        tabs.addTab(self._chat_voice_tab(), "Chat & Voice")
         tabs.addTab(self._components_tab(), "Components")
         tabs.addTab(self._about_tab(), "About")
         root.addWidget(tabs, 1)
@@ -363,6 +364,92 @@ class SettingsDialog(QDialog):
             components.remove_llama_cpp()
             self._refresh_component()
 
+    def _chat_voice_tab(self) -> QWidget:
+        page, layout = self._page()
+        s = self.ctx.settings
+        layout.addWidget(label("Conversations", "eyebrow"))
+        self.chats_save = QCheckBox("Save chats on this machine")
+        self.chats_save.setChecked(bool(s.get("chats.save", True)))
+        layout.addWidget(self.chats_save)
+        self.chats_audio = QCheckBox("Keep voice recordings with saved chats")
+        self.chats_audio.setChecked(bool(s.get("chats.save_audio", False)))
+        layout.addWidget(self.chats_audio)
+
+        layout.addWidget(divider())
+        layout.addWidget(label("Voice", "eyebrow"))
+        form = QFormLayout()
+        self.voice_asr = QComboBox()
+        self.voice_tts = QComboBox()
+        for combo, family, key in ((self.voice_asr, "asr", "voice.asr_model"),
+                                   (self.voice_tts, "tts", "voice.tts_model")):
+            combo.addItem("Auto (first downloaded)", None)
+            try:
+                for record in self.ctx.registry.list_models(family=family):
+                    if record.exists_on_disk():
+                        combo.addItem(record.repo_id, record.repo_id)
+            except Exception:  # noqa: BLE001
+                pass
+            index = combo.findData(s.get(key))
+            combo.setCurrentIndex(max(index, 0))
+        form.addRow(label("Speech recognition", "muted"), self.voice_asr)
+        form.addRow(label("Speech synthesis", "muted"), self.voice_tts)
+        self.voice_language = QComboBox()
+        for text, value in (("Auto-detect", "auto"), ("English", "en"), ("Indonesian", "id"), ("Japanese", "ja")):
+            self.voice_language.addItem(text, value)
+        self.voice_language.setCurrentIndex(max(self.voice_language.findData(s.get("voice.language", "auto")), 0))
+        form.addRow(label("Language", "muted"), self.voice_language)
+        layout.addLayout(form)
+        self.voice_silence = QCheckBox("Stop recording automatically after silence (headphones recommended)")
+        self.voice_silence.setChecked(bool(s.get("voice.auto_send_on_silence", False)))
+        layout.addWidget(self.voice_silence)
+
+        layout.addWidget(divider())
+        layout.addWidget(label("Tools", "eyebrow"))
+        self.tool_checks: dict[str, QCheckBox] = {}
+        enabled = set(s.get("tools.enabled") or [])
+        for name, text in (("calculator", "Calculator"), ("current_datetime", "Date & time"),
+                           ("knowledge_search", "Knowledge base search"), ("web_search", "Web search (network)")):
+            check = QCheckBox(text)
+            check.setChecked(name in enabled)
+            self.tool_checks[name] = check
+            layout.addWidget(check)
+
+        layout.addWidget(divider())
+        layout.addWidget(label("Providers", "eyebrow"))
+        self.provider_chat = QComboBox()
+        self.provider_chat.addItem("Local first (cloud fallback allowed)", "local")
+        self.provider_chat.addItem("Cloud first", "cloud")
+        self.provider_chat.setCurrentIndex(max(self.provider_chat.findData(s.get("providers.chat", "local")), 0))
+        layout.addWidget(self.provider_chat)
+        self.cloud_fallback = QCheckBox("Allow cloud fallback when the local model cannot run")
+        self.cloud_fallback.setChecked(bool(s.get("cloud_fallback.enabled", False)))
+        layout.addWidget(self.cloud_fallback)
+        self.local_only = QCheckBox("Local-only mode: no optional network calls (search, updates, cloud fallback)")
+        self.local_only.setChecked(bool(s.get("privacy.local_only", False)))
+        layout.addWidget(self.local_only)
+
+        layout.addWidget(divider())
+        layout.addWidget(label("Updates", "eyebrow"))
+        self.check_app_updates = QComboBox()
+        self.check_app_updates.addItem("Ask at first run", None)
+        self.check_app_updates.addItem("Check automatically", True)
+        self.check_app_updates.addItem("Never check", False)
+        self.check_app_updates.setCurrentIndex(max(self.check_app_updates.findData(s.get("updates.check_app")), 0))
+        layout.addWidget(self.check_app_updates)
+        self.check_model_updates = QCheckBox("Check downloaded models for new Hub revisions")
+        self.check_model_updates.setChecked(bool(s.get("updates.check_models", True)))
+        layout.addWidget(self.check_model_updates)
+
+        layout.addWidget(divider())
+        layout.addWidget(label("Language", "eyebrow"))
+        self.ui_language = QComboBox()
+        for text, value in (("System default", "system"), ("English", "en"), ("Bahasa Indonesia", "id")):
+            self.ui_language.addItem(text, value)
+        self.ui_language.setCurrentIndex(max(self.ui_language.findData(s.get("ui.language", "system")), 0))
+        layout.addWidget(self.ui_language)
+        layout.addStretch(1)
+        return page
+
     def _about_tab(self) -> QWidget:
         page, layout = self._page()
         layout.addWidget(label(f"Noelle Desktop AI Studio {__version__}", "h3"))
@@ -552,9 +639,25 @@ class SettingsDialog(QDialog):
             "rag.top_k": self.top_k.value(),
             "rag.chunk_tokens": self.chunk.value(),
             "rag.chunk_overlap": self.overlap.value(),
+            "chats.save": self.chats_save.isChecked(),
+            "chats.save_audio": self.chats_audio.isChecked(),
+            "voice.asr_model": self.voice_asr.currentData(),
+            "voice.tts_model": self.voice_tts.currentData(),
+            "voice.language": self.voice_language.currentData(),
+            "voice.auto_send_on_silence": self.voice_silence.isChecked(),
+            "tools.enabled": [name for name, check in self.tool_checks.items() if check.isChecked()],
+            "providers.chat": self.provider_chat.currentData(),
+            "cloud_fallback.enabled": self.cloud_fallback.isChecked(),
+            "privacy.local_only": self.local_only.isChecked(),
+            "updates.check_app": self.check_app_updates.currentData(),
+            "updates.check_models": self.check_model_updates.isChecked(),
+            "ui.language": self.ui_language.currentData(),
         })
         theme_choice = self.theme_choice.currentData() or "system"
         self.theme_changed = theme_choice != (s.get("ui.theme") or "system")
         s.set("ui.theme", theme_choice)
+        from noelle.app import i18n
+
+        i18n.set_language(s.get("ui.language"))
         self.runtime_restart_needed = any(s.get(k) != v for k, v in self._before.items())
         self.accept()

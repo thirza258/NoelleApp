@@ -51,7 +51,10 @@ def build_context():  # noqa: ANN201 - returns AppContext
     from noelle.app.services.model_registry import get_registry
     from noelle.app.services.server_manager import ServerManager
 
+    from noelle.app import i18n
+
     settings = get_settings()
+    i18n.set_language(settings.get("ui.language"))
     registry = get_registry()
     runtime = RuntimeClient(settings)
     hardware = HardwareManager(runtime)

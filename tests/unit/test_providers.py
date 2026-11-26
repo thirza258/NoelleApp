@@ -43,41 +43,66 @@ def test_pricing_calculations() -> None:
     assert abs(tts_cost - 0.030) < 1e-6
 
 
-def test_local_provider_execution() -> None:
-    provider = LocalProvider()
-    caps = provider.get_capabilities()
-    assert caps.is_local
-    assert caps.supports_modality(Modality.LLM)
-    assert caps.supports_modality(Modality.EMBEDDING)
-    assert caps.supports_modality(Modality.STT)
-    assert caps.supports_modality(Modality.TTS)
+def test_local_provider_uses_the_worker(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from noelle.providers import local_provider as module_provider
+    from noelle.runtime.protocol import Event
 
-    # Cost estimate must be $0.00
+    wav = tmp_path / "out.wav"
+    wav.write_bytes(b"RIFF-local-audio")
+
+    class FakeWorker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        def stream(self, cmd, payload, timeout=None):  # type: ignore[no-untyped-def]
+            self.calls.append((str(cmd), payload))
+            yield {"event": Event.TOKEN_STREAM, "payload": {"text": "Halo "}}
+            yield {"event": Event.TOKEN_STREAM, "payload": {"text": "Noelle"}}
+            yield {"event": Event.GENERATION_COMPLETE, "payload": {"text": "Halo Noelle", "metrics": {"tokens_per_second": 42.0}}}
+
+        def call(self, cmd, payload, timeout=None):  # type: ignore[no-untyped-def]
+            self.calls.append((str(cmd), payload))
+            if str(cmd) == "EMBED":
+                return {"embeddings": [[0.1] * 768 for _ in payload["inputs"]], "dimension": 768}
+            if str(cmd) == "TRANSCRIBE":
+                return {"text": "transkripsi lokal", "duration_s": 1.0}
+            if str(cmd) == "SYNTHESIZE_SPEECH":
+                return {"audio_path": str(wav), "sampling_rate": 16000, "duration_s": 1.0}
+            if str(cmd) == "VISION_GENERATE":
+                return {"text": "a local vision answer"}
+            if str(cmd) == "PING":
+                return {"pid": 123, "runtime_ready": True, "uptime_s": 1.0}
+            return {}
+
+        def stop(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+            return {}
+
+    fake = FakeWorker()
+    monkeypatch.setattr(module_provider, "WorkerClient", lambda *_a, **_k: fake)
+    runtime = type("Runtime", (), {"state": "ready", "endpoint": "tcp://127.0.0.1:1", "token": None,
+                                   "loaded_models": [], "runtime_caps": {}})()
+    provider = LocalProvider(runtime_client=runtime)
+    caps = provider.get_capabilities()
+    assert caps.is_local and caps.supports_modality(Modality.LLM)
     assert provider.estimate_cost(NodeRequest(modality=Modality.LLM, prompt="Hello")) == 0.0
 
-    # LLM execution
-    res = provider.execute(NodeRequest(modality=Modality.LLM, prompt="Halo Noelle"))
-    assert res.is_success
+    res = provider.execute(NodeRequest(modality=Modality.LLM, prompt="Halo Noelle", model="org/model"))
+    assert res.is_success and res.output == "Halo Noelle"
     assert res.telemetry.cost_usd == 0.0
-    assert res.telemetry.tokens_per_second > 0.0
-    assert "Halo Noelle" in str(res.output)
 
-    # Embedding execution
-    emb_res = provider.execute(NodeRequest(modality=Modality.EMBEDDING, texts=["Test vector A", "Test vector B"]))
-    assert emb_res.is_success
-    assert isinstance(emb_res.output, list)
-    assert len(emb_res.output) == 2
-    assert len(emb_res.output[0]) == 768
+    emb_res = provider.execute(NodeRequest(modality=Modality.EMBEDDING, model="org/embed",
+                                           texts=["Test vector A", "Test vector B"]))
+    assert emb_res.is_success and len(emb_res.output) == 2 and len(emb_res.output[0]) == 768
 
-    # STT execution
-    stt_res = provider.execute(NodeRequest(modality=Modality.STT, audio_bytes=b"\x00" * 32000))
-    assert stt_res.is_success
-    assert stt_res.telemetry.cost_usd == 0.0
+    stt_res = provider.execute(NodeRequest(modality=Modality.STT, model="org/asr",
+                                           audio_bytes=b"\x00" * 32000))
+    assert stt_res.is_success and stt_res.output == "transkripsi lokal"
 
-    # TTS execution
-    tts_res = provider.execute(NodeRequest(modality=Modality.TTS, prompt="Suara lokal Noelle"))
-    assert tts_res.is_success
-    assert isinstance(tts_res.output, bytes)
+    tts_res = provider.execute(NodeRequest(modality=Modality.TTS, model="org/tts", prompt="Suara lokal Noelle"))
+    assert tts_res.is_success and tts_res.output == b"RIFF-local-audio"
+
+    assert provider.health()["reachable"] is True
+    assert any(cmd == "GENERATE_STREAM" for cmd, _payload in fake.calls)
 
 
 def test_openai_provider_mocked() -> None:

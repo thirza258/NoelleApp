@@ -11,9 +11,10 @@ Supports:
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import time
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
 
@@ -27,6 +28,7 @@ from noelle.providers.base import (
 )
 from noelle.providers.credentials import get_api_key
 from noelle.providers.pricing import calculate_cost
+from noelle.providers.provider import AsyncProviderMixin, ProviderCapabilities as StrictCapabilities, ProviderError
 
 log = logging.getLogger("noelle.providers.openai")
 
@@ -34,7 +36,7 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
-class OpenAIProvider(AIProvider):
+class OpenAIProvider(AIProvider, AsyncProviderMixin):
     id: str = "openai"
     name: str = "OpenAI Direct API"
     is_local: bool = False
@@ -317,3 +319,120 @@ class OpenAIProvider(AIProvider):
             provider_id=self.id,
             model_id=model,
         )
+
+    # ------------------------------------------------ strict provider contract
+    def _require_key(self) -> str:
+        key = self.api_key
+        if not key:
+            raise ProviderError("MISSING_API_KEY", "Missing OpenAI API key.",
+                                category="auth", recoverable=False,
+                                suggested_actions=("configure_api_key",), provider_id=self.id)
+        return key
+
+    @staticmethod
+    def _raise_for_http(response: httpx.Response) -> None:
+        if response.status_code < 400:
+            return
+        code = {401: "UNAUTHORIZED", 403: "FORBIDDEN", 429: "RATE_LIMITED"}.get(response.status_code, "CLOUD_ERROR")
+        raise ProviderError(code, f"OpenAI returned HTTP {response.status_code}: {response.text[:300]}",
+                            category="cloud", recoverable=response.status_code in (429, 500, 502, 503, 504),
+                            suggested_actions=("retry", "enable_cloud_fallback"), provider_id="openai")
+
+    def chat(self, messages: list[dict[str, Any]], *, model: str | None = None, **params: Any) -> str:
+        key = self._require_key()
+        body = {"model": model or "gpt-4o-mini", "messages": messages,
+                "temperature": float(params.get("temperature", 0.7)),
+                "max_tokens": int(params.get("max_tokens", 1024)), "stream": False}
+        if params.get("tools"):
+            body["tools"] = params["tools"]
+        response = self._request("POST", f"{self.base_url}/chat/completions",
+                                 headers={"Authorization": f"Bearer {key}"}, json=body)
+        self._raise_for_http(response)
+        data = response.json()
+        return str(data["choices"][0]["message"].get("content") or "")
+
+    def stream_chat(self, messages: list[dict[str, Any]], *, model: str | None = None,
+                    **params: Any) -> Iterator[str]:
+        key = self._require_key()
+        body = {"model": model or "gpt-4o-mini", "messages": messages,
+                "temperature": float(params.get("temperature", 0.7)),
+                "max_tokens": int(params.get("max_tokens", 1024)), "stream": True,
+                "stream_options": {"include_usage": True}}
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        timeout = params.get("timeout") or DEFAULT_TIMEOUT
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            with client.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=body) as response:
+                if response.status_code >= 400:
+                    response.read()
+                    self._raise_for_http(response)
+                for line in response.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if raw == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(raw)
+                    except ValueError:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if choices:
+                        text = (choices[0].get("delta") or {}).get("content")
+                        if text:
+                            yield str(text)
+
+    def embed(self, texts: list[str], *, model: str | None = None, **params: Any) -> list[list[float]]:
+        response = self.execute(NodeRequest(modality=Modality.EMBEDDING, texts=list(texts),
+                                            model=model or "text-embedding-3-small"))
+        self._raise_node(response)
+        embeddings = response.output
+        return embeddings if isinstance(embeddings, list) and embeddings and isinstance(embeddings[0], list) \
+            else [embeddings]
+
+    def transcribe(self, audio_path: str, *, model: str | None = None, language: str | None = None,
+                   **params: Any) -> dict[str, Any]:
+        response = self.execute(NodeRequest(modality=Modality.STT, audio_path=audio_path,
+                                            model=model or "whisper-1", language=language or "id"))
+        self._raise_node(response)
+        return {"text": str(response.output), "metrics": response.telemetry.to_dict()}
+
+    def synthesize(self, text: str, *, model: str | None = None, voice: int | str = "alloy",
+                   **params: Any) -> dict[str, Any]:
+        response = self.execute(NodeRequest(modality=Modality.TTS, prompt=text,
+                                            model=model or "tts-1", voice=str(voice)))
+        self._raise_node(response)
+        return {"audio": response.output, "metrics": response.telemetry.to_dict()}
+
+    def generate_image(self, prompt: str, *, model: str | None = None, **params: Any) -> dict[str, Any]:
+        raise ProviderError("UNSUPPORTED_TASK", "OpenAI image generation is not wired in this release.",
+                            category="request", suggested_actions=("use_local_diffusion",))
+
+    def vision(self, image_path: str, prompt: str = "", *, model: str | None = None,
+               **params: Any) -> str:
+        response = self.execute(NodeRequest(modality=Modality.VISION, image_path=image_path, prompt=prompt,
+                                            model=model or "gpt-4o-mini"))
+        self._raise_node(response)
+        return str(response.output)
+
+    def execute_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        from noelle.runtime.tools import execute_tool
+
+        return execute_tool(name, arguments).to_dict()
+
+    def health(self) -> dict[str, Any]:
+        return {"provider_id": self.id, "configured": bool(self.api_key), "reachable": bool(self.api_key),
+                "is_local": False}
+
+    def capabilities(self) -> StrictCapabilities:
+        caps = self.get_capabilities()
+        return StrictCapabilities(chat=True, streaming=True, vision=caps.supports_modality(Modality.VISION),
+                                  audio_input=caps.supports_modality(Modality.STT),
+                                  audio_output=caps.supports_modality(Modality.TTS), tools=True,
+                                  embedding=caps.supports_modality(Modality.EMBEDDING),
+                                  image_generation=False, is_local=False, models=tuple(caps.supported_models))
+
+    @staticmethod
+    def _raise_node(response: NodeResponse) -> None:
+        if response.is_error:
+            raise ProviderError("CLOUD_ERROR", response.error_message or "OpenAI request failed.",
+                                category="cloud", suggested_actions=("retry", "enable_cloud_fallback"))

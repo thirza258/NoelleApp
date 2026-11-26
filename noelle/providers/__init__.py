@@ -15,10 +15,18 @@ from noelle.providers.base import (
     TelemetryRecord,
 )
 from noelle.providers.credentials import delete_api_key, get_api_key, has_api_key, set_api_key
+from noelle.providers.hybrid import CloudProvider, HybridProvider, hybrid_from_settings
 from noelle.providers.local_provider import LocalProvider
 from noelle.providers.openai_provider import OpenAIProvider
 from noelle.providers.openrouter_provider import OpenRouterProvider
 from noelle.providers.pricing import calculate_cost, lookup_price
+from noelle.providers.provider import (
+    AsyncProviderMixin,
+    Provider,
+    ProviderCapabilities as RuntimeCapabilities,
+    ProviderError,
+    ProviderErrorInfo,
+)
 from noelle.providers.registry import (
     get_capability_matrix,
     get_provider,
@@ -39,8 +47,16 @@ __all__ = [
     "delete_api_key",
     "has_api_key",
     "LocalProvider",
+    "CloudProvider",
+    "HybridProvider",
+    "hybrid_from_settings",
     "OpenAIProvider",
     "OpenRouterProvider",
+    "Provider",
+    "ProviderError",
+    "ProviderErrorInfo",
+    "AsyncProviderMixin",
+    "RuntimeCapabilities",
     "calculate_cost",
     "lookup_price",
     "get_provider",

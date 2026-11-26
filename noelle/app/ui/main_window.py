@@ -13,7 +13,7 @@ from noelle import APP_NAME
 from noelle.app import icons
 from noelle.app.context import AppContext
 from noelle.app.ui.navigation_bar import NavigationBar
-from noelle.app.ui.widgets.common import Banner, Toast, widget_alive
+from noelle.app.ui.widgets.common import Banner, Toast, open_external_url, widget_alive
 from noelle.app.ui.widgets.vram_meter import TelemetryBar
 
 log = logging.getLogger("noelle.ui")
@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
         banner_layout = QVBoxLayout(banner_host)
         banner_layout.setContentsMargins(16, 10, 16, 0)
         banner_layout.addWidget(self.crash_banner)
+        self.update_banner = Banner("info", "")
+        self.update_banner.hide()
+        banner_layout.addWidget(self.update_banner)
         self._banner_host = banner_host
         banner_host.hide()
         layout.addWidget(banner_host)
@@ -114,6 +117,7 @@ class MainWindow(QMainWindow):
             if callable(start):
                 start()
         QTimer.singleShot(400, self._refresh_account)
+        QTimer.singleShot(2500, self._check_updates)
         if not self.ctx.registry.list_models():
             QTimer.singleShot(600, self.import_cached_models)  # first run: show models already on disk
 
@@ -185,6 +189,44 @@ class MainWindow(QMainWindow):
             self._relaunch = False
 
     # ------------------------------------------------------------ handlers
+    def _check_updates(self) -> None:
+        from noelle.app.services import update_checker
+        from noelle.app.services.task_runner import runner
+
+        if self.ctx.settings.get("privacy.local_only", False):
+            return
+        if self.ctx.settings.get("updates.check_app") is not True:
+            return
+        scheduler = update_checker.UpdateScheduler(self.ctx.settings)
+        if not scheduler.should_check("app"):
+            return
+
+        def done(update: Any) -> None:
+            scheduler.mark_checked("app")
+            if update is None:
+                return
+            self.update_banner.set_text(f"<b>New Noelle version available:</b> {update.version}")
+            self.update_banner.clear_actions()
+            self.update_banner.add_action("View changes", lambda: open_external_url(update.url), "primary")
+            self.update_banner.add_action("Skip this version", lambda: self._skip_update(update.version))
+            self.update_banner.add_action("Later", self._hide_update_banner)
+            self.update_banner.show()
+            self._banner_host.show()
+
+        runner().submit(update_checker.check_app,
+                        skipped_version=self.ctx.settings.get("updates.skipped_version"),
+                        include_prereleases=bool(self.ctx.settings.get("updates.beta", False)),
+                        on_result=done, on_error=lambda _m: None)
+
+    def _skip_update(self, version: str) -> None:
+        self.ctx.settings.set("updates.skipped_version", version)
+        self._hide_update_banner()
+
+    def _hide_update_banner(self) -> None:
+        self.update_banner.hide()
+        if not self.crash_banner.isVisible():
+            self._banner_host.hide()
+
     def _refresh_account(self) -> None:
         from noelle.app.services import hf_client
         from noelle.app.services.task_runner import runner
@@ -216,7 +258,9 @@ class MainWindow(QMainWindow):
     def _on_runtime_state(self, state: str) -> None:
         self.telemetry.set_runtime_state(state)
         if state in ("ready", "warming", "starting"):
-            self._banner_host.hide()
+            self.crash_banner.hide()
+            if not self.update_banner.isVisible():
+                self._banner_host.hide()
         elif state == "unresponsive":
             self.crash_banner.set_text("<b>The model runtime stopped responding.</b> It may be stuck under heavy "
                                        "memory pressure. You can restart it; the app itself is unaffected.")

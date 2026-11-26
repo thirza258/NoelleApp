@@ -47,6 +47,30 @@ def test_workflow_page_instantiation_and_templates(ctx: Any, qtbot: Any) -> None
 
 
 def test_workflow_page_execution(ctx: Any, qtbot: Any) -> None:
+    from noelle.providers.base import NodeResponse, ProviderCapabilities, TelemetryRecord
+    from noelle.providers.registry import _registry, ensure_default_providers, register_provider
+
+    ensure_default_providers()
+    original = _registry.get("local")
+
+    class FakeLocal:
+        id = "local"
+        name = "Fake local"
+        is_local = True
+
+        def get_capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(provider_id="local", display_name=self.name, is_local=True,
+                                        modalities={"llm", "tts", "stt", "embedding", "vision", "rag"})
+
+        def estimate_cost(self, _request: Any) -> float:
+            return 0.0
+
+        def execute(self, request: Any) -> NodeResponse:
+            output = b"RIFF" if request.modality_str == "tts" else "jawaban lokal"
+            return NodeResponse(output=output, telemetry=TelemetryRecord(latency_ms=1.0),
+                                provider_id="local", model_id=request.model or "local")
+
+    register_provider(FakeLocal())
     page = WorkflowPage(ctx)
     qtbot.addWidget(page)
     page.show()
@@ -59,8 +83,9 @@ def test_workflow_page_execution(ctx: Any, qtbot: Any) -> None:
         node.provider_id = "local"
 
     qtbot.mouseClick(page.run_btn, Qt.MouseButton.LeftButton)
-    qtbot.wait(100)
-
-    # Telemetry should be populated
-    assert page.telemetry_table.rowCount() > 0
-    assert "Latency" in page.stat_latency.text()
+    try:
+        qtbot.waitUntil(lambda: page.telemetry_table.rowCount() > 0, timeout=5000)
+        assert "Latency" in page.stat_latency.text()
+    finally:
+        if original is not None:
+            register_provider(original)

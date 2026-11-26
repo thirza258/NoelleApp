@@ -50,11 +50,11 @@ _LIBRARY_ENGINES: dict[str, dict[str, str]] = {
     tasks.VISION: {"transformers": "transformers"},
     tasks.DETECTION: {"transformers": "transformers"},
     tasks.CLASSIFICATION: {"transformers": "transformers"},
-    tasks.ASR: {"transformers": "transformers"},
-    tasks.TTS: {"transformers": "transformers"},
+    tasks.ASR: {"transformers": "transformers", "faster-whisper": "faster-whisper", "ctranslate2": "faster-whisper"},
+    tasks.TTS: {"transformers": "transformers", "kokoro": "kokoro"},
     tasks.DIFFUSION: {"diffusers": "diffusers"},
     tasks.EMBEDDING: {"sentence-transformers": "sentence-transformers", "transformers": "transformers",
-                      "peft": "peft"},
+                      "model2vec": "model2vec", "peft": "peft"},
 }
 
 # engine -> backend key reported by ``capabilities.detect_backends``
@@ -65,6 +65,10 @@ _ENGINE_BACKENDS = {
     "llama.cpp": "llama.cpp",
     "mlx": "mlx",
     "peft": "transformers",
+    "kokoro": "kokoro",
+    "faster-whisper": "faster-whisper",
+    "model2vec": "model2vec",
+    "diffusion-single-file": "diffusion-single-file",
 }
 
 _MODEL_TYPE_FAMILIES = (tasks.TEXT, tasks.VISION, tasks.DETECTION, tasks.CLASSIFICATION, tasks.ASR, tasks.TTS,
@@ -215,6 +219,8 @@ def _component(engine: str, family: str | None, facts: RuntimeFacts | None, back
         detail = "the llama.cpp tools"
     elif engine == "mlx":
         detail = "the MLX runtime"
+    elif engine == "diffusion-single-file":
+        detail = "the diffusers package"
     else:
         detail = f"the '{engine}' package"
     if available is False:
@@ -267,16 +273,23 @@ def assess(*, family: str | None, library: str | None = None, files: Iterable[An
         return _component("mlx", family, facts, backends, library=lib, model_type=model_type, gated=gated)
     if lib == "peft":
         return _component("peft", family, facts, backends, library=lib, model_type=model_type, gated=gated)
+    if engine in ("kokoro", "faster-whisper", "model2vec"):
+        if engine == "faster-whisper" and names and not any(
+                name.lower().endswith((".bin", ".ct2", ".safetensors")) for name in names):
+            return _result(UNSUPPORTED_LIBRARY, family, engine=engine, library=lib, model_type=model_type,
+                           gated=gated, reason="No CTranslate2/faster-whisper model file was found.")
+        return _component(engine, family, facts, backends, library=lib, model_type=model_type, gated=gated)
 
     if family == tasks.DIFFUSION:
         if not has_index:
             if not names:
                 return _result(UNKNOWN, family, library=lib, model_type=model_type, gated=gated,
                                reason="The repository's file layout is not known yet.")
+            if any(name.lower().endswith((".safetensors", ".ckpt")) for name in names):
+                return _component("diffusion-single-file", family, facts, backends, library=lib,
+                                  model_type=model_type, gated=gated)
             return _result(UNSUPPORTED_LIBRARY, family, library=lib, model_type=model_type, gated=gated,
-                           reason="This is not a diffusers pipeline: the repository has no model_index.json.",
-                           hint="Single-file checkpoints are not supported yet. Diffusers repositories "
-                                "(with a model_index.json) run in Noelle.")
+                           reason="This is not a diffusers pipeline: no model_index.json or checkpoint file.")
         return _component("diffusers", family, facts, backends, library=lib, model_type=model_type, gated=gated)
 
     if family == tasks.EMBEDDING:

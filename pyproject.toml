@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noelle"
-version = "1.2.0"
+version = "1.3.0"
 description = "Noelle Desktop AI Studio: a local-first workbench for discovering, running, comparing and serving Hugging Face models."
 readme = "README.md"
 license = "MIT"
@@ -47,6 +47,9 @@ rag = [
 ]
 server = ["fastapi>=0.110", "uvicorn[standard]>=0.30", "tornado>=6.1"]  # tornado: pyzmq asyncio on Windows
 peft = ["peft>=0.12"]
+kokoro = ["kokoro>=0.9.2", "misaki>=0.9"]
+faster-whisper = ["faster-whisper>=1.1"]
+model2vec = ["model2vec>=0.3"]
 # Apple Silicon 4-bit path (MLX).
 mlx = [
     "mlx>=0.20; sys_platform == 'darwin' and platform_machine == 'arm64'",
@@ -70,7 +73,7 @@ noelle-studio = "noelle.__main__:main"
 include = ["noelle*"]
 
 [tool.setuptools.package-data]
-noelle = ["config/*.json", "config/eval_datasets/*.jsonl", "app/assets/*"]
+noelle = ["config/*.json", "config/eval_datasets/*.jsonl", "app/assets/*", "app/i18n/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

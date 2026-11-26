@@ -54,6 +54,22 @@ class AppContext:
         return {r.precision: r.repo_id for r in self.registry.list_models()
                 if r.base_model == repo_id and r.source == "quantized" and r.exists_on_disk()}
 
+    def local_provider(self) -> Any:
+        """The real worker-backed local provider (cached for this runtime client)."""
+        from noelle.providers.local_provider import LocalProvider
+
+        provider = self.extras.get("local_provider")
+        if provider is None or getattr(provider, "runtime_client", None) is not self.runtime:
+            provider = LocalProvider(runtime_client=self.runtime)
+            self.extras["local_provider"] = provider
+        return provider
+
+    def hybrid_provider(self, consent: Any = None) -> Any:
+        """Local-first provider honouring ``privacy.local_only`` and the fallback setting."""
+        from noelle.providers.hybrid import hybrid_from_settings
+
+        return hybrid_from_settings(self.settings, self.local_provider(), consent=consent)
+
     def runtime_facts(self) -> runnability.RuntimeFacts | None:
         """Model types/backends reported by the worker (None until its HELLO result arrives)."""
         payload = getattr(self.runtime, "runtime_caps", None)

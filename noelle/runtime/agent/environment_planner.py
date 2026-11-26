@@ -21,6 +21,10 @@ _ENGINE_PROFILES = {
     "llama.cpp": "gguf",
     "mlx": "mlx",
     "peft": "peft",
+    "kokoro": "kokoro",
+    "faster-whisper": "faster-whisper",
+    "model2vec": "model2vec",
+    "diffusion-single-file": "diffusion",
 }
 
 _ENGINE_PACKAGES = {
@@ -30,6 +34,10 @@ _ENGINE_PACKAGES = {
     "llama.cpp": ("llama-cpp-python", "gguf"),
     "mlx": ("mlx", "mlx-lm"),
     "peft": ("peft",),
+    "kokoro": ("kokoro", "misaki"),
+    "faster-whisper": ("faster-whisper",),
+    "model2vec": ("model2vec",),
+    "diffusion-single-file": ("diffusers",),
 }
 
 

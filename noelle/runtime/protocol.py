@@ -46,6 +46,7 @@ class Command(StrEnum):
     CLASSIFY_IMAGE = "CLASSIFY_IMAGE"
     TRANSCRIBE = "TRANSCRIBE"
     SYNTHESIZE_SPEECH = "SYNTHESIZE_SPEECH"
+    VOICE_TURN = "VOICE_TURN"  # transcribe -> generate -> sentence-level TTS in one GPU-lane job
     GENERATE_IMAGE = "GENERATE_IMAGE"
     EMBED = "EMBED"
     RAG_INGEST = "RAG_INGEST"
@@ -55,6 +56,7 @@ class Command(StrEnum):
     RAG_LIST_DOCUMENTS = "RAG_LIST_DOCUMENTS"
     RAG_DELETE_DOCUMENT = "RAG_DELETE_DOCUMENT"
     WEB_SEARCH = "WEB_SEARCH"
+    RUN_TOOL = "RUN_TOOL"  # execute one read-only chat tool
     QUANTIZE_CAPABILITIES = "QUANTIZE_CAPABILITIES"
     QUANTIZE = "QUANTIZE"
     LORA_LOAD = "LORA_LOAD"
@@ -70,6 +72,8 @@ class Event(StrEnum):
     STATUS = "STATUS"  # human-readable stage, e.g. {"stage": "loading", "message": "..."}
     PROGRESS = "PROGRESS"  # numeric progress, e.g. {"current": 3, "total": 20}
     CONTEXT = "CONTEXT"  # grounding sources, e.g. {"sources": [...]}
+    TRANSCRIPT = "TRANSCRIPT"  # voice turn: {"text": "..."}
+    AUDIO_CHUNK = "AUDIO_CHUNK"  # voice turn: {"seq": 0, "text": "...", "audio_path": "...", "sampling_rate": 24000}
     TOKEN_STREAM = "TOKEN_STREAM"  # {"text": "...", "view": optional int}
     QUEUE_PLAN = "QUEUE_PLAN"  # benchmark scheduling decision
     VIEW_STARTED = "VIEW_STARTED"

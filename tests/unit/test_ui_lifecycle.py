@@ -161,6 +161,16 @@ def test_embedding_error_renders_in_full(qtbot: Any) -> None:
     _assert_error_line_visible(page.error, page)
 
 
+def test_camera_dialog_is_off_until_opened_and_survives_no_camera(qtbot: Any) -> None:
+    from noelle.app.ui.widgets.camera_dialog import CameraDialog
+
+    dialog = CameraDialog()
+    qtbot.addWidget(dialog)
+    assert dialog.image_path is None
+    assert dialog._camera is None  # the device has not been opened
+    assert dialog.take_btn.isEnabled() is False
+
+
 def test_error_html_escapes_and_breaks_long_tokens() -> None:
     from noelle.app.ui.widgets.common import error_html
 

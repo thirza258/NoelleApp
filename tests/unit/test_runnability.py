@@ -43,20 +43,32 @@ def _verdict(family: str, case: str, *, library: str | None, gated: bool = False
     ("vision", "ultralytics", "ultralytics", runnability.UNSUPPORTED_LIBRARY),
     ("asr", "good", "transformers", runnability.RUNNABLE),
     ("asr", "nemo", "nemo", runnability.UNSUPPORTED_LIBRARY),
-    ("asr", "ctranslate2", "ctranslate2", runnability.UNSUPPORTED_LIBRARY),
+    ("asr", "ctranslate2", "ctranslate2", runnability.NEEDS_COMPONENT),
     ("tts", "good", "transformers", runnability.RUNNABLE),
     ("tts", "kokoro", None, runnability.UNSUPPORTED_LIBRARY),
     ("tts", "omnivoice", None, runnability.UNSUPPORTED_LIBRARY),
     ("tts", "stable-audio-3", "stable-audio-3", runnability.UNSUPPORTED_LIBRARY),
     ("diffusion", "good", "diffusers", runnability.RUNNABLE),
-    ("diffusion", "single-file", "diffusers", runnability.UNSUPPORTED_LIBRARY),
+    ("diffusion", "single-file", "diffusers", runnability.RUNNABLE),
     ("embedding", "good", "sentence-transformers", runnability.RUNNABLE),
-    ("embedding", "model2vec", "model2vec", runnability.UNSUPPORTED_LIBRARY),
+    ("embedding", "model2vec", "model2vec", runnability.NEEDS_COMPONENT),
     ("embedding", "unknown-st", "sentence-transformers", runnability.NEEDS_NEWER_RUNTIME),
 ])
 def test_fixture_matrix(family: str, case: str, library: str | None, expected: str) -> None:
     verdict = _verdict(family, case, library=library)
     assert verdict.verdict == expected, verdict.to_dict()
+
+
+def test_native_engines_are_runnable_or_need_their_component() -> None:
+    kokoro = _verdict("tts", "kokoro", library="kokoro")
+    assert kokoro.verdict in (runnability.RUNNABLE, runnability.NEEDS_COMPONENT)
+    assert kokoro.engine == "kokoro"
+    faster = _verdict("asr", "ctranslate2", library="ctranslate2")
+    assert faster.verdict in (runnability.RUNNABLE, runnability.NEEDS_COMPONENT)
+    assert faster.engine == "faster-whisper"
+    model2vec = _verdict("embedding", "model2vec", library="model2vec")
+    assert model2vec.verdict in (runnability.RUNNABLE, runnability.NEEDS_COMPONENT)
+    assert model2vec.engine == "model2vec"
 
 
 def test_gguf_only_is_runnable_or_needs_the_component() -> None:

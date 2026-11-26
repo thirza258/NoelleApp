@@ -71,6 +71,39 @@ def test_local_only_privacy_mode_enforcement() -> None:
 
 
 def test_workflow_execution_pipeline() -> None:
+    from noelle.providers.base import NodeResponse, ProviderCapabilities, TelemetryRecord
+    from noelle.providers.registry import _registry, ensure_default_providers, register_provider
+
+    ensure_default_providers()
+    original = _registry.get("local")
+
+    class FakeLocal:
+        id = "local"
+        name = "Fake local provider"
+        is_local = True
+
+        def get_capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(provider_id="local", display_name=self.name, is_local=True,
+                                        modalities={"llm", "tts", "stt", "embedding", "vision"})
+
+        def estimate_cost(self, _request) -> float:  # type: ignore[no-untyped-def]
+            return 0.0
+
+        def execute(self, request):  # type: ignore[no-untyped-def]
+            output = b"RIFF-fake-audio" if request.modality_str == "tts" else "Jawaban lokal sintesis suara."
+            return NodeResponse(output=output,
+                                telemetry=TelemetryRecord(latency_ms=1.0, cost_usd=0.0, output_tokens=4),
+                                provider_id="local", model_id=request.model or "local")
+
+    register_provider(FakeLocal())
+    try:
+        _run_workflow_pipeline()
+    finally:
+        if original is not None:
+            register_provider(original)
+
+
+def _run_workflow_pipeline() -> None:
     graph = WorkflowGraph(privacy_mode=PrivacyMode.HYBRID)
     graph.add_node(create_node("input", "in_1", parameters={"value": "Jelaskan sintesis suara"}))
     graph.add_node(create_node("llm", "llm_1", provider_id="local", model_id="Qwen2.5-7B"))

@@ -729,6 +729,75 @@ def _cmd_tts(worker: Worker, ctx: JobContext) -> None:
     ctx.emit(Event.RESULT, result)
 
 
+def _cmd_voice_turn(worker: Worker, ctx: JobContext) -> None:
+    """One local voice turn on the GPU lane: ASR -> LLM -> sentence-level TTS (mode B)."""
+    from noelle.config import get_settings
+    from noelle.runtime import voice as voice_mod
+    from noelle.runtime.errors import BadRequest
+    from noelle.runtime.protocol import GenerationParams
+
+    payload = ctx.payload
+    settings = get_settings()
+    asr_payload = dict(payload.get("asr") or {})
+    tts_payload = dict(payload.get("tts") or {})
+    asr_payload.setdefault("model_id", settings.get("voice.asr_model"))
+    tts_payload.setdefault("model_id", settings.get("voice.tts_model"))
+    if not asr_payload.get("model_id"):
+        raise BadRequest("Voice input needs a downloaded ASR model.",
+                         hint="Choose one in Settings › Voice.")
+    if not tts_payload.get("model_id"):
+        raise BadRequest("Voice output needs a downloaded TTS model.",
+                         hint="Choose one in Settings › Voice.")
+    audio_path = str(payload.get("audio_path") or "")
+    if not audio_path or not os.path.isfile(audio_path):
+        raise BadRequest("No recording was provided.")
+
+    ctx.status("transcribe", "Transcribing…")
+    asr_spec = worker.spec({**asr_payload, "task": "automatic-speech-recognition"},
+                           "automatic-speech-recognition")
+    asr = worker.models.ensure(asr_spec, on_status=lambda msg: ctx.status("load", msg))
+    transcript = asr.engine.transcribe(audio_path, language=payload.get("language") or None,
+                                       translate=False, timestamps=False)
+    ctx.emit(Event.TRANSCRIPT, {"text": transcript.get("text", ""), "chunks": transcript.get("chunks", [])})
+
+    messages = [dict(message) for message in (payload.get("messages") or []) if isinstance(message, dict)]
+    if not messages or messages[-1].get("content") != transcript.get("text", ""):
+        messages.append({"role": "user", "content": transcript.get("text", "")})
+    ctx.status("load", "Loading the chat model…")
+    llm_spec = worker.spec({**payload.get("llm", {}), "task": "text-generation"}, "text-generation")
+    llm = worker.models.ensure(llm_spec, on_status=lambda msg: ctx.status("load", msg))
+    params = GenerationParams.from_dict(payload.get("params"))
+    ctx.status("generate", "Generating…")
+    result = llm.engine.stream_chat(messages, params, stop_event=ctx.stop_event,
+                                    on_text=lambda text: ctx.emit(Event.TOKEN_STREAM, {"text": text}),
+                                    system_prompt=payload.get("system_prompt") or None)
+    if ctx.stop_event.is_set():
+        from noelle.runtime.errors import Cancelled
+
+        raise Cancelled("The voice turn was cancelled.")
+
+    ctx.status("synthesize", "Synthesizing…")
+    tts_spec = worker.spec({**tts_payload, "task": "text-to-speech"}, "text-to-speech")
+    tts = worker.models.ensure(tts_spec, on_status=lambda msg: ctx.status("load", msg))
+    chunks = []
+    for index, sentence in enumerate(voice_mod.split_sentences(result.text)):
+        if ctx.stop_event.is_set():
+            break
+        audio = tts.engine.synthesize(sentence, voice=int(payload.get("voice", 0)),
+                                      speed=float(payload.get("speed", 1.0)),
+                                      pitch=float(payload.get("pitch", 0.0)))
+        chunk = {"seq": index, "text": sentence, "audio_path": audio.get("audio_path"),
+                 "sampling_rate": audio.get("sampling_rate")}
+        chunks.append(chunk)
+        ctx.emit(Event.AUDIO_CHUNK, chunk)
+    metrics = result.metrics()
+    metrics.update(mode="after_generation", engine=llm.engine_name, device=llm.device,
+                   tts_engine=tts.engine_name, tts_chunks=len(chunks),
+                   real_time_factor=transcript.get("metrics", {}).get("real_time_factor"))
+    ctx.emit(Event.RESULT, {"transcript": transcript.get("text", ""), "text": result.text,
+                            "audio_chunks": chunks, "metrics": metrics})
+
+
 def _cmd_image(worker: Worker, ctx: JobContext) -> None:
     from noelle.runtime.pipelines import encode_png_b64
 
@@ -825,6 +894,38 @@ def _cmd_rag_delete_document(worker: Worker, ctx: JobContext) -> None:
     ctx.emit(Event.RESULT, {"collection": collection, "removed": removed})
 
 
+class _RagToolAdapter:
+    def __init__(self, worker: Worker, ctx: JobContext) -> None:
+        self.worker = worker
+        self.ctx = ctx
+
+    def query(self, collection: str, text: str, *, top_k: int = 4) -> dict[str, Any]:
+        info = self.worker.rag().collection_info(collection)
+        if info is None:
+            raise ValueError(f"Collection '{collection}' does not exist.")
+        embedder = _embedder_for(self.worker, info["embedding_model"], self.ctx)
+        return {"hits": self.worker.rag().query(collection, text, embedder.engine, top_k=top_k)}
+
+
+class _WebToolAdapter:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.engine = _web_engine(payload)
+
+    def search(self, query: str) -> dict[str, Any]:
+        return {"results": self.engine.search(query)}
+
+
+def _cmd_run_tool(worker: Worker, ctx: JobContext) -> None:
+    from noelle.runtime import tools
+
+    name = str(ctx.payload.get("name") or "")
+    arguments = ctx.payload.get("arguments") if isinstance(ctx.payload.get("arguments"), dict) else {}
+    collection = str(ctx.payload.get("collection") or "") or None
+    result = tools.execute_tool(name, arguments, rag=_RagToolAdapter(worker, ctx),
+                                web=_WebToolAdapter(ctx.payload), collection=collection)
+    ctx.emit(Event.RESULT, result.to_dict())
+
+
 def _cmd_web_search(worker: Worker, ctx: JobContext) -> None:
     engine = _web_engine(ctx.payload)
     query = str(ctx.payload.get("query") or "")
@@ -898,6 +999,7 @@ _HANDLERS: dict[Command, Callable[[Worker, JobContext], None]] = {
     Command.CLASSIFY_IMAGE: _cmd_vision_pipeline,
     Command.TRANSCRIBE: _cmd_transcribe,
     Command.SYNTHESIZE_SPEECH: _cmd_tts,
+    Command.VOICE_TURN: _cmd_voice_turn,
     Command.GENERATE_IMAGE: _cmd_image,
     Command.EMBED: _cmd_embed,
     Command.RAG_INGEST: _cmd_rag_ingest,
@@ -905,6 +1007,7 @@ _HANDLERS: dict[Command, Callable[[Worker, JobContext], None]] = {
     Command.RAG_DELETE_COLLECTION: _cmd_rag_delete,
     Command.RAG_DELETE_DOCUMENT: _cmd_rag_delete_document,
     Command.WEB_SEARCH: _cmd_web_search,
+    Command.RUN_TOOL: _cmd_run_tool,
     Command.QUANTIZE: _cmd_quantize,
     Command.LORA_LOAD: _cmd_lora_load,
     Command.LORA_SET_ADAPTER: _cmd_lora_set,

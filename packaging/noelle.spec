@@ -88,12 +88,14 @@ if IS_MAC:
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": "Noelle AI Studio",
-            "CFBundleShortVersionString": "1.1.1",
-            "CFBundleVersion": "1.1.1",
+            "CFBundleShortVersionString": "1.3.0",
+            "CFBundleVersion": "1.3.0",
             "LSApplicationCategoryType": "public.app-category.developer-tools",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "13.0",
             "NSMicrophoneUsageDescription": "Noelle records audio locally for speech recognition. "
                                             "Recordings never leave your Mac.",
+            "NSCameraUsageDescription": "Noelle opens the camera only when you choose Camera in the vision "
+                                        "playground. Frames are processed locally and never uploaded.",
         },
     )

@@ -35,7 +35,7 @@ from noelle.providers.registry import list_providers
 from noelle.services.cost_advisor import DecisionAdvisor
 from noelle.workflow.graph import PrivacyMode, WorkflowGraph
 from noelle.workflow.nodes import create_node
-from noelle.workflow.runner import PrivacyViolationError, WorkflowResult, WorkflowRunner
+from noelle.workflow.runner import WorkflowResult, WorkflowRunner
 
 
 class WorkflowPage(QWidget):
@@ -393,20 +393,24 @@ class WorkflowPage(QWidget):
             if dlg.exec() != QMessageBox.StandardButton.Ok:
                 return
 
-        try:
-            self.run_btn.setEnabled(False)
-            self.run_btn.setText("Running...")
-            res: WorkflowResult = self.runner.execute(self.graph)
+        from noelle.app.services.task_runner import runner
 
+        graph = self.graph
+        self.run_btn.setEnabled(False)
+        self.run_btn.setText("Running...")
+
+        def work() -> WorkflowResult:
+            # A fresh runner per run, without Qt callbacks: it executes on a worker thread.
+            return WorkflowRunner().execute(graph, consent_given=True)
+
+        def done(res: WorkflowResult) -> None:
+            self._finish_run()
             if not res.is_success:
                 QMessageBox.critical(self, "Pipeline Error", res.error_message or "Execution failed.")
                 return
-
-            # Display Telemetry
             self.stat_latency.setText(f"Latency: {res.total_latency_ms:.1f} ms")
             self.stat_cost.setText(f"Cost: ${res.total_cost_usd:.6f}")
             self.stat_tokens.setText(f"Tokens: {res.total_tokens}")
-
             self.telemetry_table.setRowCount(0)
             for nid, tel in res.telemetry.items():
                 node = self.graph.nodes.get(nid)
@@ -417,17 +421,18 @@ class WorkflowPage(QWidget):
                 self.telemetry_table.setItem(row, 2, QTableWidgetItem(f"{tel.latency_ms:.1f} ms"))
                 self.telemetry_table.setItem(row, 3, QTableWidgetItem(f"${tel.cost_usd:.6f}"))
                 self.telemetry_table.setItem(row, 4, QTableWidgetItem(str(tel.input_tokens + tel.output_tokens)))
+            self.output_view.setPlainText(json.dumps(res.to_dict()["node_outputs"], indent=2))
+            self.tabs.setCurrentIndex(1)
 
-            # Display Output
-            out_str = json.dumps(res.to_dict()["node_outputs"], indent=2)
-            self.output_view.setPlainText(out_str)
-            self.tabs.setCurrentIndex(1)  # Switch to Telemetry tab
+        def failed(message: str) -> None:
+            self._finish_run()
+            QMessageBox.critical(self, "Pipeline Error", message)
 
-        except PrivacyViolationError as pve:
-            QMessageBox.critical(self, "Zero Egress Violation", str(pve))
-        finally:
-            self.run_btn.setEnabled(True)
-            self.run_btn.setText("▶ Run Pipeline")
+        runner().submit(work, on_result=done, on_error=failed)
+
+    def _finish_run(self) -> None:
+        self.run_btn.setEnabled(True)
+        self.run_btn.setText("▶ Run Pipeline")
 
     def _on_node_step(self, node_id: str, status: str) -> None:
         pass

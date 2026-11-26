@@ -45,7 +45,39 @@ def test_stt_wer_and_cer_metric() -> None:
     assert norm == "halo noelle ini uji coba"
 
 
-def test_embedding_evaluation_lab() -> None:
+def test_embedding_evaluation_lab(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from noelle.providers import local_provider as provider_module
+    from noelle.providers.registry import get_provider
+
+    keywords = ("privasi", "data", "ai", "rendang", "cuda", "gpu", "resep", "hardware")
+
+    def vector(text: str) -> list[float]:
+        values = [1.0 if keyword in text.lower() else 0.0 for keyword in keywords]
+        if not any(values):
+            values[0] = 0.1
+        return values
+
+    class FakeWorker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def call(self, _cmd, payload, timeout=None):  # type: ignore[no-untyped-def]
+            return {"embeddings": [vector(text) for text in payload["inputs"]], "dimension": len(keywords)}
+
+    monkeypatch.setattr(provider_module, "WorkerClient", FakeWorker)
+    local = get_provider("local")
+    previous_endpoint = getattr(local, "_endpoint", None)
+    previous_token = getattr(local, "_token", None)
+    local._endpoint = "tcp://127.0.0.1:1"  # type: ignore[attr-defined]
+    local._token = None  # type: ignore[attr-defined]
+    try:
+        _run_embedding_lab()
+    finally:
+        local._endpoint = previous_endpoint  # type: ignore[attr-defined]
+        local._token = previous_token  # type: ignore[attr-defined]
+
+
+def _run_embedding_lab() -> None:
     lab = EmbeddingEvaluationLab()
     docs = [
         {"id": "doc_1", "text": "Kecerdasan buatan lokal dan privasi data."},

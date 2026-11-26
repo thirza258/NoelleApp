@@ -81,6 +81,12 @@ PROFILES: dict[str, Profile] = {
                 requires="cuda_platform"),
         Profile("gguf", "GGUF models through llama.cpp (llama-cpp-python, gguf).",
                 ("llama-cpp-python>=0.3", "gguf>=0.10"), ("llama_cpp", "gguf")),
+        Profile("kokoro", "Kokoro text-to-speech (also needs the espeak-ng system package).",
+                ("kokoro>=0.9.2", "misaki>=0.9"), ("kokoro", "misaki")),
+        Profile("faster-whisper", "faster-whisper speech recognition (CTranslate2).",
+                ("faster-whisper>=1.1",), ("faster_whisper",)),
+        Profile("model2vec", "Model2Vec static embeddings.",
+                ("model2vec>=0.3",), ("model2vec",)),
     )
 }
 
