@@ -3,7 +3,21 @@ name: ci
 on:
   push:
     branches: [main, "feat/**"]
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
+    paths-ignore:
+      - "landing/**"
+      - "docs/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - ".gitignore"
 
 permissions:
   contents: read
