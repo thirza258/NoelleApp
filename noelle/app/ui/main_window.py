@@ -13,7 +13,7 @@ from noelle import APP_NAME
 from noelle.app import icons
 from noelle.app.context import AppContext
 from noelle.app.ui.navigation_bar import NavigationBar
-from noelle.app.ui.widgets.common import Banner, Toast
+from noelle.app.ui.widgets.common import Banner, Toast, widget_alive
 from noelle.app.ui.widgets.vram_meter import TelemetryBar
 
 log = logging.getLogger("noelle.ui")
@@ -146,11 +146,20 @@ class MainWindow(QMainWindow):
         self.navigate("workspace")
 
     def toast(self, text: str, kind: str = "info") -> None:
-        self._toasts = [t for t in self._toasts if t.isVisible()]
+        # Qt deletes a faded-out toast; its Python wrapper then raises on any attribute access
+        # (libshiboken: Internal C++ object already deleted). Check validity before isVisible().
+        self._toasts = [t for t in self._toasts if widget_alive(t) and t.isVisible()]
         toast = Toast(self.centralWidget(), text, kind)
+        toast.destroyed.connect(lambda _obj=None, t=toast: self._forget_toast(t))
         offset = sum(t.height() + 8 for t in self._toasts)
         toast.show_at_corner(offset)
         self._toasts.append(toast)
+
+    def _forget_toast(self, toast: Toast) -> None:
+        try:
+            self._toasts.remove(toast)
+        except ValueError:
+            pass
 
     def open_settings(self) -> None:
         from noelle.app.ui.settings_dialog import SettingsDialog

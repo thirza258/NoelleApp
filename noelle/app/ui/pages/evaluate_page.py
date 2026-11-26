@@ -34,7 +34,7 @@ from noelle import paths
 from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.services import experiments
-from noelle.app.ui.widgets.common import Banner, Panel, button, label
+from noelle.app.ui.widgets.common import Banner, Panel, button, error_html, label
 from noelle.runtime import evaluation, tasks
 from noelle.runtime.preflight import format_bytes
 from noelle.runtime.protocol import Command, Event
@@ -313,7 +313,7 @@ class EvaluatePage(QWidget):
             self.dataset = evaluation.load_dataset(ref)
         except (OSError, evaluation.DatasetError) as exc:
             self.dataset = None
-            self.dataset_info.setText(f"<span style='color:{theme.DANGER}'>{exc}</span>")
+            self.dataset_info.setText(error_html(str(exc)))
         else:
             scorers = sorted({c.scorer for c in self.dataset.cases})
             self.dataset_info.setText(f"{self.dataset.description}<br>{len(self.dataset.cases)} cases · scored by "

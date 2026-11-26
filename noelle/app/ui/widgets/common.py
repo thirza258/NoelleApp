@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import html
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QPainter, QPainterPath, QPen
+from shiboken6 import isValid as _qt_is_valid
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -66,6 +69,125 @@ def human_duration(seconds: float | None) -> str:
     if seconds >= 60:
         return f"{seconds // 60}m {seconds % 60}s"
     return f"{seconds}s"
+
+
+# ------------------------------------------------------------ error display
+_LONG_TOKEN = re.compile(r"(?<=\S{40})(?=\S)")
+_PATH_BREAKS = re.compile(r"(?<=[/\\_.-])(?=\S)")
+
+
+def wrap_long_text(text: str) -> str:
+    """Insert zero-width break opportunities so a long path/traceback wraps instead of clipping."""
+    return _LONG_TOKEN.sub("​", _PATH_BREAKS.sub("​", str(text)))
+
+
+def error_html(message: str, hint: str | None = None) -> str:
+    """Escaped rich text for an error, with a wrapped message and optional muted hint.
+
+    Every site that renders an error uses this: the message is always escaped, and long
+    unbreakable tokens (HF cache paths, URLs) get zero-width break points so the text wraps
+    inside the panel instead of being cut off at the right edge.
+    """
+    body = html.escape(wrap_long_text(message or "")).replace("\n", "<br>")
+    coloured = f"<span style='color:{theme.DANGER}'>{body}</span>"
+    if hint:
+        hint_body = html.escape(wrap_long_text(hint)).replace("\n", "<br>")
+        coloured += f"<br><span style='color:{theme.TEXT_FAINT}'>{hint_body}</span>"
+    return coloured
+
+
+def error_text(message: str, hint: str | None = None) -> str:
+    """Plain text version (clipboard) of :func:`error_html`."""
+    return message + (f"\n{hint}" if hint else "")
+
+
+def widget_alive(widget: Any) -> bool:
+    """True when a Python wrapper still points at a live C++ QObject.
+
+    After Qt deletes a widget (``deleteLater``), its Python wrapper raises RuntimeError on any
+    access; callers must not probe ``isVisible()``/attributes before this check.
+    """
+    if widget is None:
+        return False
+    try:
+        return bool(_qt_is_valid(widget))
+    except RuntimeError:
+        return False
+
+
+class ErrorLine(QFrame):
+    """Full-width, wrapped, selectable error with a copy action.
+
+    Uses a rich-text QLabel whose horizontal size policy is Ignored: the message can never
+    widen the surrounding panel (QLabel only breaks at whitespace, and a cache path is one
+    token, so break points are injected by :func:`wrap_long_text`). The label grows vertically
+    so the complete reason and hint stay readable.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setProperty("error-line", True)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+        self.text_label = QLabel()
+        self.text_label.setTextFormat(Qt.TextFormat.RichText)
+        self.text_label.setWordWrap(True)
+        self.text_label.setOpenExternalLinks(False)
+        self.text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.text_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        self.text_label.setMinimumWidth(0)
+        layout.addWidget(self.text_label)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(6)
+        self.copy_btn = QToolButton()
+        self.copy_btn.setText("Copy details")
+        self.copy_btn.setProperty("variant", "ghost")
+        self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.clicked.connect(self._copy)
+        actions.addWidget(self.copy_btn)
+        self.logs_btn = QToolButton()
+        self.logs_btn.setText("Open logs")
+        self.logs_btn.setProperty("variant", "ghost")
+        self.logs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.logs_btn.clicked.connect(self._open_logs)
+        actions.addWidget(self.logs_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+        self._plain = ""
+        self.hide()
+
+    def set_error(self, message: str, hint: str | None = None) -> None:
+        self._plain = error_text(str(message or ""), str(hint) if hint else None)
+        self.text_label.setText(error_html(str(message or ""), str(hint) if hint else None))
+        self.text_label.setToolTip(self._plain)
+        self.show()
+
+    def message(self) -> str:
+        return self._plain
+
+    def clear(self) -> None:
+        self._plain = ""
+        self.text_label.clear()
+        self.hide()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        hint = super().sizeHint()
+        return QSize(min(hint.width(), 680), hint.height())
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self._plain)
+
+    @staticmethod
+    def _open_logs() -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from noelle import paths
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.logs_dir())))
 
 
 # ------------------------------------------------------------------ widgets
@@ -486,6 +608,8 @@ class Toast(QFrame):
         QTimer.singleShot(timeout_ms, self._dismiss)
 
     def show_at_corner(self, offset: int = 0) -> None:
+        if not widget_alive(self):
+            return
         parent = self.parentWidget()
         if parent is None:
             return
@@ -498,9 +622,15 @@ class Toast(QFrame):
         self._fade.start()
 
     def _dismiss(self) -> None:
+        if not widget_alive(self):
+            return
         self._fade.setDirection(QPropertyAnimation.Direction.Backward)
-        self._fade.finished.connect(self.deleteLater)
+        self._fade.finished.connect(self._delete_safely)
         self._fade.start()
+
+    def _delete_safely(self) -> None:
+        if widget_alive(self):
+            self.deleteLater()
 
 
 def clear_layout(layout: QLayout) -> None:

@@ -18,14 +18,18 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from noelle.runtime import devices, tasks
+from noelle.runtime import runnability
 from noelle.runtime.errors import (
     BadRequest,
     DependencyMissing,
+    Gated,
     LoadFailed,
     ModelNotFound,
+    NeedsNewerRuntime,
     NoelleRuntimeError,
     PreflightRejected,
     RemoteCodeBlocked,
+    Unsupported,
 )
 from noelle.runtime.generation import (
     LlamaCppTextEngine,
@@ -61,6 +65,8 @@ class ModelSpec:
     trust_remote_code: bool = False
     gguf_file: str | None = None
     engine: str | None = None
+    library_name: str | None = None
+    gated: bool = False
     force: bool = False
 
     @classmethod
@@ -78,6 +84,8 @@ class ModelSpec:
             trust_remote_code=bool(data.get("trust_remote_code", False)),
             gguf_file=data.get("gguf_file") or None,
             engine=data.get("engine") or None,
+            library_name=data.get("library_name") or None,
+            gated=bool(data.get("gated", False)),
             force=bool(data.get("force", False)),
         )
 
@@ -274,11 +282,14 @@ class ModelManager:
             devices.empty_cache(device)
             if devices.is_oom(exc):
                 raise
+            # Keep the full library message and traceback in models.log; the UI gets the
+            # reason with the cache path replaced by the model id (the path is not actionable).
+            log.warning("load failed for %s; full traceback follows", spec.model_id, exc_info=True)
             message = str(exc)
             if "trust_remote_code" in message:
                 raise RemoteCodeBlocked(f"{spec.model_id} ships custom Python code.",
                                         hint="Review the repository, then allow remote code for this model.") from exc
-            raise LoadFailed(f"Could not load {spec.model_id}: {message}") from exc
+            raise LoadFailed(f"Could not load {spec.model_id}: {_scrub_source(message, source, spec.model_id)}") from exc
         load_ms = (time.perf_counter() - t0) * 1000.0
         measured = max(self._allocated(device, engine_name) - before, 0)
         loaded = LoadedModel(key=key, spec=spec, family=spec.family, device=device, engine=engine,
@@ -361,6 +372,7 @@ class ModelManager:
         return int(snap.get("allocated") or 0)
 
     def _load_engine(self, spec: ModelSpec, source: str, device: str) -> tuple[Any, str]:
+        self._check_runnability(spec, source)
         family = spec.family
         trc, rev = spec.trust_remote_code, spec.revision
         if family == tasks.TEXT:
@@ -397,6 +409,40 @@ class ModelManager:
             return EmbeddingEngine.load(source, device=device, trust_remote_code=trc), "sentence-transformers"
         raise BadRequest(f"No engine for task family '{family}' (rev={rev})")
 
+    @staticmethod
+    def _check_runnability(spec: ModelSpec, source: str) -> None:
+        """Refuse a checkpoint Noelle has no engine for, before importing any heavy library."""
+        root = Path(source)
+        if spec.gguf_file:
+            files = [spec.gguf_file]
+            config: dict[str, Any] = {}
+        else:
+            files = runnability.file_names(root)
+            config = _read_config(root)
+        verdict = runnability.assess(
+            family=spec.family,
+            library=spec.library_name,
+            files=files,
+            config=config,
+            gated=spec.gated,
+            facts=runnability.collect_runtime_facts(),
+        )
+        extra = {"model": spec.model_id, "verdict": verdict.verdict, "library": verdict.library}
+        if verdict.verdict == runnability.UNSUPPORTED_LIBRARY:
+            raise Unsupported(verdict.reason or f"{spec.model_id} cannot be loaded by Noelle.",
+                              hint=verdict.hint, **extra)
+        if verdict.verdict == runnability.NEEDS_NEWER_RUNTIME:
+            raise NeedsNewerRuntime(verdict.reason or f"{spec.model_id} needs a newer transformers version.",
+                                    hint=verdict.hint, **extra)
+        if verdict.verdict == runnability.REMOTE_CODE and not spec.trust_remote_code:
+            raise RemoteCodeBlocked(f"{spec.model_id} ships custom Python code.",
+                                    hint="Review the repository, then allow remote code for this model.", **extra)
+        if verdict.verdict == runnability.NEEDS_COMPONENT:
+            raise DependencyMissing(verdict.reason or f"Loading {spec.model_id} needs an uninstalled component.",
+                                    hint=verdict.hint, component=verdict.engine, **extra)
+        if verdict.verdict == runnability.GATED_NO_ACCESS:
+            raise Gated(verdict.reason or f"Access to {spec.model_id} has not been approved.",
+                        hint=verdict.hint, **extra)
 
     @staticmethod
     def _load_gguf(spec: ModelSpec, source: str, device: str) -> tuple[Any, str]:
@@ -416,6 +462,13 @@ class ModelManager:
                                     hint="Noelle can download them for you after you approve it.",
                                     component=COMPONENT)
         return LlamaServerEngine.load(gguf_path, device=device, binary=str(server)), "llama_server"
+
+
+def _scrub_source(message: str, source: str, model_id: str) -> str:
+    """Replace the HF cache path (one unbreakable token, not actionable) with the model id."""
+    if source and source in message:
+        message = message.replace(source, model_id)
+    return message
 
 
 def _read_config(root: Path) -> dict[str, Any]:

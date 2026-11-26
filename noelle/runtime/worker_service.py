@@ -275,8 +275,13 @@ class Worker:
         return stopped
 
     def hello_payload(self) -> dict[str, Any]:
+        from noelle.runtime import runnability
+
         return {"version": __version__, "pid": os.getpid(), "port": self.port,
-                "runtime_ready": self.runtime_ready.is_set(), "device": self.device, "init_error": self.init_error}
+                "runtime_ready": self.runtime_ready.is_set(), "device": self.device, "init_error": self.init_error,
+                # The shell has no transformers: publish the worker's model types/backends so Discover
+                # and the detail page evaluate the same runnability rules as the loaders.
+                "runtime_caps": runnability.collect_runtime_facts().to_payload()}
 
     def heartbeat_payload(self) -> dict[str, Any]:
         data: dict[str, Any] = {

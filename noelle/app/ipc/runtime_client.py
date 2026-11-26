@@ -107,6 +107,9 @@ class RuntimeClient(QObject):
         self._init_error_reported = False
         self.last_heartbeat_payload: dict[str, Any] = {}
         self.loaded_models: list[dict[str, Any]] = []
+        # Published by the worker in its HELLO result: bundled library versions, supported
+        # model_type names per family and backend availability, used by Discover runnability.
+        self.runtime_caps: dict[str, Any] = {}
         self._watchdog = QTimer(self)
         self._watchdog.setInterval(2000)
         self._watchdog.timeout.connect(self._check_heartbeat)
@@ -153,6 +156,7 @@ class RuntimeClient(QObject):
         self._init_error_reported = False
         self._token = secrets.token_hex(16)
         self._port = None
+        self.runtime_caps = {}  # a restarted worker may use a different environment
         self._stdout_buffer = ""
         python = self.settings.get("runtime.python") or None
         env_name = self.settings.get("runtime.environment")
@@ -293,14 +297,21 @@ class RuntimeClient(QObject):
         listener.connection_error.connect(self._on_ipc_error)
         self._listener = listener
         listener.start()
-        _, hello = make_request(Command.HELLO, {}, auth=self._token)
-        listener.send(hello)
+        hello = self.request(Command.HELLO)
+        hello.finished.connect(self._on_hello)
         for frame in self._outbox:
             listener.send(frame)
         self._outbox.clear()
         self._last_heartbeat = time.monotonic()
         self._watchdog.start()
         self._set_state("warming")
+
+    def _on_hello(self, payload: dict[str, Any]) -> None:
+        caps = payload.get("runtime_caps")
+        if isinstance(caps, dict):
+            self.runtime_caps = caps
+            log.debug("runtime capabilities received: %d model types",
+                      len(caps.get("all_model_types") or ()))
 
     def _on_message(self, message: dict[str, Any]) -> None:
         if not isinstance(message, dict):

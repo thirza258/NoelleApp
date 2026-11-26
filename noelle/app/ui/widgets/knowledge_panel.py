@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from noelle.app.context import AppContext
-from noelle.app.ui.widgets.common import Banner, SearchField, button, label, time_ago
+from noelle.app.ui.widgets.common import Banner, SearchField, button, label, time_ago, widget_alive
 from noelle.runtime.hub_cache import is_downloaded
 from noelle.runtime.protocol import Command
 
@@ -116,7 +116,19 @@ class KnowledgePanel(QWidget):
         right_layout.addWidget(self.results, 1)
         splitter.addWidget(right)
         splitter.setSizes([260, 640])
-        ctx.downloads.job_finished.connect(lambda *_: self._check_embedder())
+        # Bound method: auto-disconnected by PySide when this per-model panel is deleted.
+        ctx.downloads.job_finished.connect(self._on_download_finished)
+
+    def _on_download_finished(self, *_args: Any) -> None:
+        if not widget_alive(self):
+            return
+        self._check_embedder()
+
+    def shutdown(self) -> None:
+        try:
+            self.ctx.downloads.job_finished.disconnect(self._on_download_finished)
+        except (RuntimeError, TypeError):
+            pass
 
     # ------------------------------------------------------------------ data
     def on_activated(self) -> None:

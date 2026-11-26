@@ -1,0 +1,7 @@
+{
+  "vocab": {"a": 1, "b": 2},
+  "n_token": 178,
+  "hidden_dim": 512,
+  "style_dim": 128,
+  "decoder": {"upsample_rates": [10, 6], "resblock_kernel_sizes": [3, 7]}
+}

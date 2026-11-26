@@ -256,6 +256,19 @@ def clean_stale_incomplete(folder: Path) -> int:
     return removed
 
 
+def _gated_message(repo_id: str, *, token: str | None) -> str:
+    url = f"https://huggingface.co/{repo_id}"
+    if token:
+        return (f"Your Hugging Face account is not approved for {repo_id} yet. Open {url}, accept the "
+                "license / request access, then download again.")
+    return (f"This model is gated. Accept its license at {url} and add your Hugging Face token in Settings.")
+
+
+def _emit_gated(repo_id: str, token: str | None) -> None:
+    emit({"type": "error", "code": "GATED", "message": _gated_message(repo_id, token=token),
+          "url": f"https://huggingface.co/{repo_id}"})
+
+
 def run(args: argparse.Namespace) -> int:
     from huggingface_hub import HfApi, constants, snapshot_download
     from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
@@ -266,8 +279,7 @@ def run(args: argparse.Namespace) -> int:
     try:
         info = api.model_info(args.repo_id, revision=args.revision, files_metadata=True)
     except GatedRepoError:
-        emit({"type": "error", "code": "GATED", "message": "This repository is gated. Accept its license on the Hub "
-                                                         "and add your Hugging Face token in Settings."})
+        _emit_gated(args.repo_id, token)
         return 1
     except RepositoryNotFoundError:
         emit({"type": "error", "code": "NOT_FOUND", "message": f"Repository {args.repo_id} was not found."})
@@ -275,6 +287,21 @@ def run(args: argparse.Namespace) -> int:
     except Exception as exc:  # network
         emit({"type": "error", "code": "NETWORK", "message": f"Could not reach the Hub: {exc}"})
         return 1
+
+    if bool(getattr(info, "gated", False)):
+        # model_info() succeeds for gated repos (metadata is public); auth_check is the
+        # authoritative "has this account accepted the licence?" probe.
+        try:
+            api.auth_check(args.repo_id, token=token)
+        except GatedRepoError:
+            _emit_gated(args.repo_id, token)
+            return 1
+        except RepositoryNotFoundError:
+            emit({"type": "error", "code": "NOT_FOUND", "message": f"Repository {args.repo_id} was not found."})
+            return 1
+        except Exception as exc:  # network
+            emit({"type": "error", "code": "NETWORK", "message": f"Could not verify access to the Hub: {exc}"})
+            return 1
 
     commit = info.sha
     files = [RepoFile(s.rfilename, s.size if s.size is not None else (s.lfs.size if s.lfs else None),
@@ -320,6 +347,7 @@ def run(args: argparse.Namespace) -> int:
         if p["cached"]:
             emit({"type": "file_done", "file": f.name, "size": f.size, "cached": True})
     failures: list[str] = []
+    gated_failure = False
     with ThreadPoolExecutor(max_workers=max(1, args.max_workers)) as pool:
         futures = {pool.submit(download_file, api_kwargs, f, retries=args.retries, verify=not args.no_verify,
                                totals=totals): f for f in pending}
@@ -329,11 +357,17 @@ def run(args: argparse.Namespace) -> int:
                 future.result()
             except Exception as exc:  # noqa: BLE001
                 failures.append(entry.name)
+                if isinstance(exc, GatedRepoError):
+                    gated_failure = True
                 emit({"type": "file_error", "file": entry.name, "message": str(exc)[:500]})
     if failures:
         log.warning("%d file(s) failed: %s", len(failures), ", ".join(failures[:10]))
-        emit({"type": "error", "code": "INCOMPLETE",
-              "message": f"{len(failures)} file(s) failed: {', '.join(failures[:5])}. Retry to resume."})
+        if gated_failure:
+            # 403 on files means the licence was not accepted: terminal, not resumable.
+            _emit_gated(args.repo_id, token)
+        else:
+            emit({"type": "error", "code": "INCOMPLETE",
+                  "message": f"{len(failures)} file(s) failed: {', '.join(failures[:5])}. Retry to resume."})
         return 1
     log.info("all files downloaded and verified")
 

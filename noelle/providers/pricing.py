@@ -61,6 +61,12 @@ def lookup_price(model_id: str) -> ModelPrice:
     return ModelPrice(input_per_m=2.00, output_per_m=8.00)
 
 
+def has_published_price(model_id: str) -> bool:
+    """True when the model has an explicit schedule (not the size-based fallback)."""
+    clean = model_id.strip().lower()
+    return clean in MODEL_PRICING or any(name in clean or clean in name for name in MODEL_PRICING)
+
+
 def calculate_cost(model_id: str, *, input_tokens: int = 0, output_tokens: int = 0,
                    audio_duration_seconds: float = 0.0, text_chars: int = 0) -> float:
     """Calculate exact USD cost for a given inference output."""

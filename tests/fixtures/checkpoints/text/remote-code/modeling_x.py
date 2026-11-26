@@ -1,0 +1,1 @@
+"""Fixture custom modeling file (never imported by tests)."""

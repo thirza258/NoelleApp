@@ -1,0 +1,4 @@
+{
+  "architectures": ["OmniVoiceForConditionalGeneration"],
+  "model_type": "omnivoice"
+}

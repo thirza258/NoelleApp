@@ -1,0 +1,4 @@
+{
+  "architectures": ["VitsModel"],
+  "model_type": "vits"
+}

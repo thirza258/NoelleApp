@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import QMargins, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -22,7 +24,7 @@ from PySide6.QtWidgets import (
 from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.ui.widgets.chat_canvas import MarkdownView
-from noelle.app.ui.widgets.common import Spinner, button, label
+from noelle.app.ui.widgets.common import ErrorLine, Spinner, button, label
 from noelle.runtime import tasks
 from noelle.runtime.protocol import Command
 
@@ -130,6 +132,10 @@ class VisionPlayground(QWidget):
         open_btn = button("Open image…", "image")
         open_btn.clicked.connect(self._pick)
         row.addWidget(open_btn)
+        paste_btn = button("Paste", "copy")
+        paste_btn.setToolTip("Use an image from the clipboard (Ctrl/Cmd+V screenshots)")
+        paste_btn.clicked.connect(self._paste)
+        row.addWidget(paste_btn)
         self.image_info = label("", "faint")
         row.addWidget(self.image_info, 1)
         left_layout.addLayout(row)
@@ -169,6 +175,10 @@ class VisionPlayground(QWidget):
         self.status = label("", "faint")
         run_row.addWidget(self.status, 1)
         right_layout.addLayout(run_row)
+        # Errors get their own full-width, wrapped, selectable line: the status row is too
+        # narrow for a message carrying a snapshot path or a library traceback.
+        self.error = ErrorLine()
+        right_layout.addWidget(self.error)
         self.answer = MarkdownView()
         self.answer.setVisible(family == tasks.VISION)
         right_layout.addWidget(self.answer)
@@ -186,6 +196,17 @@ class VisionPlayground(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Open image", "", IMAGE_FILTER)
         if path:
             self.set_image(path)
+
+    def _paste(self) -> None:
+        image = QGuiApplication.clipboard().image()
+        if image.isNull():
+            self.ctx.toast("The clipboard does not contain an image.", "info")
+            return
+        path = Path(tempfile.gettempdir()) / f"noelle-paste-{int(time.time() * 1000)}.png"
+        if not image.save(str(path), "PNG"):
+            self.ctx.toast("Could not save the pasted image.", "warning")
+            return
+        self.set_image(str(path))
 
     def set_image(self, path: str) -> None:
         if not Path(path).is_file():
@@ -205,6 +226,7 @@ class VisionPlayground(QWidget):
             self.ctx.toast("Open an image first.", "info")
             return
         payload = {**self.payload(), "image_path": self.image_path}
+        self.error.clear()
         self.spinner.start()
         self.status.setText("Running…")
         if self.family == tasks.VISION:
@@ -252,7 +274,9 @@ class VisionPlayground(QWidget):
 
     def _on_failed(self, payload: dict[str, Any]) -> None:
         self._reset()
-        self.status.setText(f"<span style='color:{theme.DANGER}'>{payload.get('message')}</span>")
+        self.status.setText("Failed.")
+        self.error.set_error(str(payload.get("message") or "The request failed."),
+                             str(payload["hint"]) if payload.get("hint") else None)
 
     def _reset(self) -> None:
         self._handle = None

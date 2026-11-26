@@ -45,6 +45,11 @@ class DownloadPanel(QWidget):
         self.resume_btn = button("Resume", "play")
         self.resume_btn.clicked.connect(lambda: self.repo_id and self.ctx.downloads.resume(self.repo_id))
         buttons.addWidget(self.resume_btn)
+        self.open_page_btn = button("Open model page", "external")
+        self.open_page_btn.setToolTip("Accept the model's licence on huggingface.co, then download again")
+        self.open_page_btn.clicked.connect(self._open_model_page)
+        self.open_page_btn.hide()
+        buttons.addWidget(self.open_page_btn)
         self.cancel_btn = button("Cancel", "x", "ghost")
         self.cancel_btn.clicked.connect(lambda: self.repo_id and self.ctx.downloads.cancel(self.repo_id))
         buttons.addWidget(self.cancel_btn)
@@ -92,7 +97,11 @@ class DownloadPanel(QWidget):
         self.files.hide()
         self.pause_btn.hide()
         self.cancel_btn.hide()
-        self.resume_btn.setVisible(job is not None and job.status in ("paused", "error", "cancelled") and not downloaded)
+        gated = job is not None and job.error_code == "GATED"
+        gated_model = bool(getattr(self.summary, "gated", False)) and not downloaded
+        self.open_page_btn.setVisible(gated or gated_model)
+        self.resume_btn.setVisible(job is not None and job.status in ("paused", "error", "cancelled")
+                                   and not downloaded and not gated)
         if downloaded:
             size = human_bytes(record.size_bytes) if record.size_bytes else ""
             self.status.setText(f"✓ Downloaded {size}".strip())
@@ -120,6 +129,7 @@ class DownloadPanel(QWidget):
     def _render_job(self, job: Any) -> None:
         self.download_btn.hide()
         self.reveal_btn.hide()
+        self.open_page_btn.hide()
         self.progress.show()
         self.files.show()
         paused = job.status == "paused"
@@ -172,6 +182,16 @@ class DownloadPanel(QWidget):
         from noelle.app.services import hf_client
 
         return bool(hf_client.get_token())
+
+    def _open_model_page(self) -> None:
+        if not self.repo_id:
+            return
+        job = self.ctx.downloads.job(self.repo_id)
+        url = (job.error_url if job is not None and job.error_url else
+               f"https://huggingface.co/{self.repo_id}")
+        from noelle.app.ui.widgets.common import open_external_url
+
+        open_external_url(url)
 
     def _reveal(self) -> None:
         record = self.ctx.registry.get_model(self.repo_id or "", source="hub")

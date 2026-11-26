@@ -247,8 +247,14 @@ class DiffusionEngine:
             kwargs["revision"] = revision
         try:
             pipe = AutoPipelineForText2Image.from_pretrained(source, **kwargs)
-        except Exception:
-            pipe = DiffusionPipeline.from_pretrained(source, trust_remote_code=trust_remote_code, **kwargs)
+        except Exception as first_error:
+            try:
+                pipe = DiffusionPipeline.from_pretrained(source, trust_remote_code=trust_remote_code, **kwargs)
+            except Exception as fallback_error:
+                # Keep both reasons: the auto-class error often names the missing pipeline class,
+                # while the generic fallback names the missing component.
+                raise RuntimeError(f"AutoPipelineForText2Image failed: {first_error}; "
+                                   f"DiffusionPipeline fallback failed: {fallback_error}") from fallback_error
         pipe = pipe.to(device)
         if device == "mps" and hasattr(pipe, "enable_attention_slicing"):
             pipe.enable_attention_slicing()

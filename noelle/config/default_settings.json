@@ -31,7 +31,46 @@
     "top_p": 0.9,
     "top_k": 50,
     "repetition_penalty": 1.1,
-    "max_new_tokens": 512
+    "max_new_tokens": 512,
+    "speculative": {
+      "mode": "off",
+      "draft_model": null
+    }
+  },
+  "privacy": {
+    "local_only": false
+  },
+  "chats": {
+    "save": true,
+    "save_audio": false
+  },
+  "voice": {
+    "asr_model": null,
+    "tts_model": null,
+    "language": "auto",
+    "auto_send_on_silence": false
+  },
+  "tools": {
+    "enabled": [],
+    "max_rounds": 5
+  },
+  "library": {
+    "external_sources": {
+      "ollama": true,
+      "lmstudio": true
+    },
+    "ollama_path": null,
+    "lmstudio_path": null
+  },
+  "updates": {
+    "check_app": null,
+    "check_models": true,
+    "beta": false,
+    "skipped_version": null
+  },
+  "cloud_fallback": {
+    "enabled": false,
+    "require_confirmation": true
   },
   "rag": {
     "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",

@@ -94,6 +94,7 @@ class DownloadJob:
     speed_bps: float = 0.0
     error: str | None = None
     error_code: str | None = None
+    error_url: str | None = None
     path: str | None = None
     commit: str | None = None
     retries: int = 0
@@ -171,6 +172,10 @@ class DownloadManager(QObject):
 
     def resume(self, repo_id: str) -> None:
         job = self.jobs.get(repo_id)
+        if job is not None and job.error_code == "GATED":
+            # Approval is granted on the Hub, not by retrying. UI offers "Open model page".
+            log.info("refusing to resume gated download of %s; access was not approved", repo_id)
+            return
         if job is not None and job.status in ("paused", "error", "cancelled"):
             log.info("resuming download of %s (was %s)", repo_id, job.status)
             self.start(repo_id, summary=job.summary, include=job.include, exclude=job.exclude, revision=job.revision)
@@ -288,6 +293,7 @@ class DownloadManager(QObject):
         job.status = "planning"
         job.error = None
         job.error_code = None
+        job.error_url = None
         job.started_at = time.time()
         job._last_time = time.monotonic()
         job._last_bytes = 0
@@ -399,6 +405,7 @@ class DownloadManager(QObject):
             else:  # error
                 job.error = _text(event.get("message")) or "The download failed."
                 job.error_code = _text(event.get("code"))
+                job.error_url = _text(event.get("url"))
                 job.status = "error"
                 job.finished_at = time.time()
                 log.warning("download of %s failed (%s): %s", repo_id, job.error_code, job.error)

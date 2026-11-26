@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSi
 
 from noelle.app import icons, theme
 from noelle.app.ui.widgets.common import Avatar, Card, ElidedLabel, Pill, Spinner, human_count, label, time_ago
+from noelle.runtime import runnability
 from noelle.runtime.preflight import Compatibility, format_params
 
 CARD_MIN_WIDTH = 286
@@ -17,12 +18,24 @@ SPACING = 12
 _BADGE_TEXT = {"green": "Runs natively", "yellow": "Needs 4-bit", "red": "CPU fallback", "unknown": "Unknown size"}
 
 
+def _verdict_badge(verdict: runnability.RunnabilityResult) -> str:
+    if verdict.verdict == runnability.UNSUPPORTED_LIBRARY:
+        return f"needs {verdict.library}"[:24] if verdict.library else "not supported"
+    if verdict.verdict == runnability.NEEDS_NEWER_RUNTIME:
+        return "needs newer runtime"
+    if verdict.verdict == runnability.GATED_NO_ACCESS:
+        return "gated"
+    return verdict.label[:24]
+
+
 class ModelCard(Card):
     selected = Signal(object)
 
-    def __init__(self, model: Any, compat: Compatibility | None, downloaded: bool) -> None:
+    def __init__(self, model: Any, compat: Compatibility | None, downloaded: bool,
+                 verdict: runnability.RunnabilityResult | None = None) -> None:
         super().__init__(clickable=True)
         self.model = model
+        self.verdict = verdict
         self.setMinimumWidth(CARD_MIN_WIDTH - 40)
         self.setFixedHeight(CARD_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -52,8 +65,16 @@ class ModelCard(Card):
             pills.addWidget(Pill(format_params(model.param_count), "accent"))
         if downloaded:
             pills.addWidget(Pill("downloaded", "green"))
+        elif self.verdict is not None and not self.verdict.supported:
+            pills.addWidget(Pill(_verdict_badge(self.verdict), "red", tooltip=self.verdict.reason))
         elif model.license:
             pills.addWidget(Pill(str(model.license)[:16], "unknown"))
+        if self.verdict is not None and self.verdict.verdict == runnability.NEEDS_COMPONENT:
+            pills.addWidget(Pill(f"needs {self.verdict.engine or 'component'}", "yellow",
+                                 tooltip=self.verdict.reason))
+        if bool(getattr(model, "gated", False)):
+            pills.addWidget(Pill("gated", "yellow",
+                                 tooltip="Accept the licence on huggingface.co and add your token"))
         pills.addStretch(1)
         root.addLayout(pills)
 
@@ -82,6 +103,11 @@ class ModelCard(Card):
         layout.addWidget(art)
         layout.addWidget(label(text, "faint"))
         return host
+
+    def set_runnability(self, verdict: runnability.RunnabilityResult | None) -> None:
+        self.verdict = verdict
+        if verdict is not None and not verdict.supported:
+            self.badge.setToolTip(verdict.reason or verdict.label)
 
     def set_compat(self, compat: Compatibility | None) -> None:
         if compat is None:
@@ -112,10 +138,12 @@ class ModelCardGrid(QWidget):
         self._columns = 0
         self._suspended = False
         self._compat: Callable[[Any], Compatibility | None] = lambda _m: None
+        self._runnability: Callable[[Any], runnability.RunnabilityResult | None] = lambda _m: None
         self._downloaded: set[str] = set()
         self._has_more = False
         self._loading = False
         self._spec_filter: str = "all"
+        self._runs_filter: bool = True
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -163,6 +191,8 @@ class ModelCardGrid(QWidget):
             self._update_footer()
 
     def _card_matches_spec(self, card: ModelCard) -> bool:
+        if self._runs_filter and card.verdict is not None and not card.verdict.supported:
+            return False
         if self._spec_filter == "all":
             return True
         compat = self._compat(card.model)
@@ -181,6 +211,15 @@ class ModelCardGrid(QWidget):
     def set_compat_function(self, fn: Callable[[Any], Compatibility | None]) -> None:
         self._compat = fn
 
+    def set_runnability_function(self, fn: Callable[[Any], runnability.RunnabilityResult | None]) -> None:
+        self._runnability = fn
+
+    def set_runs_filter(self, enabled: bool) -> None:
+        if self._runs_filter != enabled:
+            self._runs_filter = enabled
+            self._reflow(force=True)
+            self._update_footer()
+
     def set_downloaded(self, repo_ids: set[str]) -> None:
         self._downloaded = set(repo_ids)
 
@@ -198,7 +237,8 @@ class ModelCardGrid(QWidget):
 
     def append_models(self, models: list[Any]) -> None:
         for model in models:
-            card = ModelCard(model, self._compat(model), model.id in self._downloaded)
+            verdict = self._runnability(model)
+            card = ModelCard(model, self._compat(model), model.id in self._downloaded, verdict)
             card.selected.connect(self.model_selected)
             self._cards.append(card)
         self._reflow(force=True)
@@ -206,7 +246,7 @@ class ModelCardGrid(QWidget):
     def refresh_badges(self) -> None:
         for card in self._cards:
             card.set_compat(self._compat(card.model))
-        if self._spec_filter != "all":
+        if self._spec_filter != "all" or self._runs_filter:
             self._reflow(force=True)
             self._update_footer()
 

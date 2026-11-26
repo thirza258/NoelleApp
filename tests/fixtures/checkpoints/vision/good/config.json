@@ -1,0 +1,4 @@
+{
+  "architectures": ["LlavaForConditionalGeneration"],
+  "model_type": "llava"
+}

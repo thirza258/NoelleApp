@@ -22,11 +22,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from noelle.app import theme
 from noelle.app.context import AppContext
 from noelle.app.services.task_runner import runner
 from noelle.app.ui.widgets.audio_visualizer import MicRecorder, WaveformView, request_microphone
-from noelle.app.ui.widgets.common import Spinner, button, human_duration, label
+from noelle.app.ui.widgets.common import ErrorLine, Spinner, button, human_duration, label
 from noelle.runtime import tasks
 from noelle.runtime.protocol import Command
 
@@ -109,8 +108,10 @@ class AudioPlayground(QWidget):
         self.spinner = Spinner(16)
         options.addWidget(self.spinner)
         root.addLayout(options)
-        self.status = label("", "faint")
+        self.status = label("", "faint", wrap=True)
         root.addWidget(self.status)
+        self.error = ErrorLine()
+        root.addWidget(self.error)
         self.transcript = QPlainTextEdit()
         self.transcript.setReadOnly(True)
         self.transcript.setPlaceholderText("The transcript appears here.")
@@ -252,8 +253,10 @@ class AudioPlayground(QWidget):
         self.spinner = Spinner(16)
         controls.addWidget(self.spinner)
         root.addLayout(controls)
-        self.status = label("", "faint")
+        self.status = label("", "faint", wrap=True)
         root.addWidget(self.status)
+        self.error = ErrorLine()
+        root.addWidget(self.error)
         self.wave = WaveformView(120)
         self.wave.seek_requested.connect(self._seek)
         root.addWidget(self.wave)
@@ -333,6 +336,7 @@ class AudioPlayground(QWidget):
 
     # =============================================================== shared
     def _run(self, cmd: Command, payload: dict[str, Any], on_done: Callable[[dict[str, Any]], None]) -> None:
+        self.error.clear()
         self.spinner.start()
         self.run_btn.setEnabled(False)
         self.status.setText("Working…")
@@ -349,8 +353,9 @@ class AudioPlayground(QWidget):
             self._handle = None
             self.spinner.stop()
             self.run_btn.setEnabled(True)
-            self.status.setText(f"<span style='color:{theme.DANGER}'>{error.get('message')}</span>"
-                                + (f" — {error['hint']}" if error.get("hint") else ""))
+            self.status.setText("Failed.")
+            self.error.set_error(str(error.get("message") or "The request failed."),
+                                 str(error["hint"]) if error.get("hint") else None)
 
         handle.finished.connect(finished)
         handle.failed.connect(failed)

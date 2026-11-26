@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from noelle.paths import hf_hub_cache
-from noelle.runtime import tasks
+from noelle.runtime import runnability, tasks
 from noelle.runtime.hub_cache import cached_snapshot_path, is_downloaded
 
 from noelle.app.services.model_registry import ModelRecord, ModelRegistry
@@ -140,12 +140,15 @@ def discover_cached_models(cache_dir: Path | None = None) -> list[ModelRecord]:
             continue
         config = _read_json(snapshot / "config.json")
         architectures = config.get("architectures") or []
+        # Flag models the bundled runtimes cannot load, before the user clicks Load.
+        verdict = runnability.assess_local(snapshot, family=tasks.task_family(tag), library=_library(snapshot))
         records.append(ModelRecord(
             repo_id=repo_id, pipeline_tag=tag, local_path=str(snapshot), commit_hash=snapshot.name,
             library_name=_library(snapshot), architecture=str(architectures[0]) if architectures else None,
             param_count=count_safetensors_params(snapshot), license=license_from_readme(snapshot),
             size_bytes=sum(p.stat().st_size for p in snapshot.rglob("*") if p.is_file()),
-            metadata={"imported_from_cache": True},
+            metadata={"imported_from_cache": True, "runnability": verdict.verdict,
+                      "runnability_reason": verdict.reason or verdict.hint},
         ))
     return records
 

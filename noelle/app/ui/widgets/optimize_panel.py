@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from noelle.app.context import AppContext
 from noelle.app.services.model_registry import ModelRecord
-from noelle.app.ui.widgets.common import Banner, Card, Pill, Spinner, button, clear_layout, label
+from noelle.app.ui.widgets.common import Banner, Card, Pill, Spinner, button, clear_layout, label, widget_alive
 from noelle.runtime import tasks
 from noelle.runtime.hub_cache import is_downloaded
 from noelle.runtime.preflight import format_bytes
@@ -97,7 +97,10 @@ class OptimizePanel(QScrollArea):
         lora.addWidget(self.lora_status)
         root.addWidget(self.lora_host)
         root.addStretch(1)
-        ctx.downloads.job_finished.connect(lambda *_: self._refresh_adapters())
+        # A bound method of this QObject: PySide disconnects it automatically when the panel
+        # (rebuilt per model by ModelDetailPage._build_tabs) is deleted. A lambda would keep
+        # firing into the dead widget once per previously opened model.
+        ctx.downloads.job_finished.connect(self._on_download_finished)
 
     # ------------------------------------------------------------ activation
     def on_activated(self) -> None:
@@ -229,7 +232,21 @@ class OptimizePanel(QScrollArea):
         self.on_activated()
 
     # ------------------------------------------------------------------ LoRA
+    def _on_download_finished(self, *_args: Any) -> None:
+        if not widget_alive(self):
+            return
+        self._refresh_adapters()
+
+    def shutdown(self) -> None:
+        """Explicitly detach from the application-level download signal before deletion."""
+        try:
+            self.ctx.downloads.job_finished.disconnect(self._on_download_finished)
+        except (RuntimeError, TypeError):
+            pass
+
     def _refresh_adapters(self) -> None:
+        if not widget_alive(self):
+            return
         summary = self.page.summary
         if summary is None:
             return

@@ -111,6 +111,10 @@ class StoragePage(QWidget):
                             tooltip="Register complete models already in the Hugging Face cache (offline)")
         add_cached.clicked.connect(self._import_cached)
         head.addWidget(add_cached)
+        external = button("Find Ollama / LM Studio models", "box", "ghost",
+                          tooltip="Import GGUF models already installed by another app (read-only, no copying)")
+        external.clicked.connect(self._import_external)
+        head.addWidget(external)
         relocate = button("Relocate cache…", "folder", "primary")
         relocate.clicked.connect(self._relocate)
         head.addWidget(relocate)
@@ -343,6 +347,26 @@ class StoragePage(QWidget):
             self.rescan()
 
         runner().submit(import_cached_models, self.ctx.registry, self.cache_dir(), on_result=done)
+
+    def _import_external(self) -> None:
+        from noelle.app.services import external_models
+
+        def work() -> list[str]:
+            if not self.ctx.settings.get("library.external_sources.ollama", True) and \
+                    not self.ctx.settings.get("library.external_sources.lmstudio", True):
+                return []
+            found = external_models.discover_external_models(
+                ollama=self.ctx.settings.get("library.ollama_path") or None,
+                lmstudio=self.ctx.settings.get("library.lmstudio_path") or None)
+            return external_models.register_external_models(self.ctx.registry, found)
+
+        def done(added: list[str]) -> None:
+            self.ctx.toast(f"Imported {len(added)} model(s) from Ollama / LM Studio." if added else
+                           "No Ollama or LM Studio models were found.", "success" if added else "info")
+            self.rescan()
+
+        runner().submit(work, on_result=done,
+                        on_error=lambda message: QMessageBox.warning(self, "External models", message))
 
     def _after_delete(self, message: str) -> None:
         removed = self.ctx.registry.prune_missing()

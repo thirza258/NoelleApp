@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from typing import Any, Iterable
 
-from noelle.runtime import tasks
+from noelle.runtime import runnability, tasks
 from noelle.runtime.preflight import context_limit
 
 # pipeline tag -> (input modalities, output modalities)
@@ -124,6 +124,9 @@ class ModelCapability:
     remote_code: RemoteCode = field(default_factory=lambda: RemoteCode(False))
     is_adapter: bool = False
     base_models: tuple[str, ...] = ()
+    verdict: str | None = None  # runnability.RUNNABLE / UNSUPPORTED_LIBRARY / ...
+    verdict_reason: str | None = None
+    verdict_hint: str | None = None
 
     @property
     def supported(self) -> bool:
@@ -160,7 +163,8 @@ class ModelCapability:
 
 
 def analyze(model: Any, config: dict[str, Any] | None = None, *, tokenizer_config: dict[str, Any] | None = None,
-            chat_template: str | None = None) -> ModelCapability:
+            chat_template: str | None = None,
+            runtime_facts: runnability.RuntimeFacts | None = None) -> ModelCapability:
     """Build a :class:`ModelCapability` from a Hub summary (or any object with the same attributes).
 
     ``config`` overrides the summary's own config (the detail page fetches the full
@@ -182,7 +186,8 @@ def analyze(model: Any, config: dict[str, Any] | None = None, *, tokenizer_confi
     formats = _formats(names, lowered, library, cfg)
     quantization = _quantization(cfg, lowered, library, formats)
     gguf_variants = gguf_variants_from_files(names, sizes) if "gguf" in formats else ()
-    runtimes = _runtimes(family, quantization, formats)
+    verdict = runnability.assess_model(model, config=cfg, facts=runtime_facts)
+    runtimes = _runtimes(family, quantization, formats, verdict=verdict)
     precisions: tuple[str, ...] = ()
     conversions: tuple[str, ...] = ()
     if family and quantization is None:
@@ -249,6 +254,9 @@ def analyze(model: Any, config: dict[str, Any] | None = None, *, tokenizer_confi
         remote_code=RemoteCode(needs_code, py_files, auto_refs),
         is_adapter=bool(getattr(model, "is_adapter", False)) or library == "peft",
         base_models=tuple(getattr(model, "base_models", None) or ()),
+        verdict=verdict.verdict,
+        verdict_reason=verdict.reason or None,
+        verdict_hint=verdict.hint,
     )
 
 
@@ -346,7 +354,8 @@ def _quantization(cfg: dict[str, Any], tags: set[str], library: str | None, form
     return None
 
 
-def _runtimes(family: str | None, quantization: str | None, formats: set[str]) -> tuple[str, ...]:
+def _runtimes(family: str | None, quantization: str | None, formats: set[str], *,
+              verdict: runnability.RunnabilityResult | None = None) -> tuple[str, ...]:
     if family is None:
         return ()
     if quantization == "gguf":
@@ -357,6 +366,20 @@ def _runtimes(family: str | None, quantization: str | None, formats: set[str]) -
         return ()  # no Noelle engine for these formats
     if formats == {"onnx"}:
         return ()
+    if verdict is not None:
+        if verdict.verdict in runnability.BLOCKED_VERDICTS:
+            return ()
+        engine = verdict.engine
+        if engine == "llama.cpp":
+            return ("llama.cpp",)
+        if engine == "mlx":
+            return ("mlx",)
+        if engine == "diffusers":
+            return ("diffusers",)
+        if engine == "sentence-transformers":
+            return ("sentence-transformers",)
+        if engine in ("transformers", "peft"):
+            return ("transformers",)
     return _FAMILY_RUNTIMES.get(family, ())
 
 

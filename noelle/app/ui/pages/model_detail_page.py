@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 from typing import Any
@@ -28,12 +29,15 @@ from noelle.app.services.model_registry import ModelRecord
 from noelle.app.services.task_runner import runner
 from noelle.app.ui.widgets.common import (
     Avatar,
+    Banner,
     EmptyState,
+    ErrorLine,
     FlowLayout,
     Pill,
     Spinner,
     button,
     clear_layout,
+    error_html,
     human_count,
     icon_button,
     label,
@@ -169,6 +173,9 @@ class ModelDetailPage(QWidget):
 
         # download
         download, download_layout = _section("Download")
+        self.runnability_notice = Banner("warning", "")
+        self.runnability_notice.hide()
+        download_layout.addWidget(self.runnability_notice)
         self.download_panel = DownloadPanel(ctx)
         self.download_panel.downloaded.connect(self._on_downloaded)
         download_layout.addWidget(self.download_panel)
@@ -210,6 +217,8 @@ class ModelDetailPage(QWidget):
         runtime_layout.addLayout(load_row)
         self.load_status = label("", "faint", wrap=True)
         runtime_layout.addWidget(self.load_status)
+        self.load_error = ErrorLine()
+        runtime_layout.addWidget(self.load_error)
         self.left_layout.addWidget(runtime)
         self.left_layout.addStretch(1)
 
@@ -270,6 +279,7 @@ class ModelDetailPage(QWidget):
         self._render_fit()
         self.download_panel.set_model(summary)
         self._update_load_state()
+        self._render_runnability()
         self._fetch_details()
 
     def _fetch_details(self) -> None:
@@ -285,6 +295,7 @@ class ModelDetailPage(QWidget):
                 self.config = {}
             self._render_facts()
             self._render_fit()
+            self._render_runnability()
 
         local_dir = Path(record.local_path) if record and record.local_path else None
 
@@ -311,6 +322,7 @@ class ModelDetailPage(QWidget):
                 self.config = config
             self._render_identity()
             self._render_fit()
+            self._render_runnability()
             self._apply_profile()
             self._refresh_docs()
 
@@ -382,6 +394,27 @@ class ModelDetailPage(QWidget):
         if self.summary is None:
             return
         self._assess()
+
+    def _render_runnability(self) -> None:
+        """Exact verdict beside the Download button, using the worker's runtime facts."""
+        if self.summary is None:
+            return
+        verdict = self.ctx.runnability(self.summary, config=self.config or None)
+        self._runnability = verdict
+        self.runnability_notice.clear_actions()
+        if verdict.supported:
+            self.runnability_notice.hide()
+            return
+        body = f"<b>This model can't run in Noelle yet.</b> {html.escape(verdict.reason or verdict.label)}"
+        if verdict.hint:
+            body += f"<br><span style='color:{theme.TEXT_FAINT}'>{html.escape(verdict.hint)}</span>"
+        self.runnability_notice.set_text(body)
+        if verdict.verdict == "GATED_NO_ACCESS":
+            self.runnability_notice.add_action("Open model page", self._open_hub, "primary")
+        elif verdict.remediation and verdict.remediation.get("action") in ("install_component", "update_runtime"):
+            self.runnability_notice.add_action("Fix runtime environment…",
+                                               lambda: self._fix_runtime_environment(verdict), "primary")
+        self.runnability_notice.show()
 
     # ================================================================ tabs
     def _build_tabs(self) -> None:
@@ -532,7 +565,8 @@ class ModelDetailPage(QWidget):
             payload = record.worker_payload(self.ctx.settings)
             payload["task"] = s.pipeline_tag or payload.get("task")
         else:
-            payload = {"model_id": s.id, "task": s.pipeline_tag or "text-generation"}
+            payload = {"model_id": s.id, "task": s.pipeline_tag or "text-generation",
+                       "library_name": s.library_name, "gated": bool(s.gated)}
         if self.variant.currentIndex() == 0:
             payload["precision"] = self.precision.currentData() or "auto"
         payload["device"] = self.device.currentData() or "auto"
@@ -587,6 +621,7 @@ class ModelDetailPage(QWidget):
         if self.summary is None:
             return
         self.force_btn.hide()
+        self.load_error.clear()
         payload = {**self.worker_payload(), "force": force}
         self.load_spinner.start()
         self.load_btn.setEnabled(False)
@@ -606,9 +641,10 @@ class ModelDetailPage(QWidget):
     def _on_load_failed(self, payload: dict[str, Any]) -> None:
         self._load_handle = None
         self._update_load_state()
-        message = payload.get("message", "Loading failed.")
+        message = payload.get("message") or "Loading failed."
         hint = payload.get("hint")
-        self.load_status.setText(f"<span style='color:{theme.DANGER}'>{message}</span>" + (f"<br>{hint}" if hint else ""))
+        self.load_status.setText("Load failed — the full reason is below.")
+        self.load_error.set_error(str(message), str(hint) if hint else None)
         if payload.get("code") == "OOM":
             self.force_btn.show()
         if payload.get("code") == "REMOTE_CODE_BLOCKED":
@@ -617,6 +653,54 @@ class ModelDetailPage(QWidget):
             from noelle.app.ui.component_dialog import ensure_llama_cpp
 
             ensure_llama_cpp(self, lambda: self._load(force=False), reason=payload.get("message"))
+        if payload.get("code") in ("NEEDS_NEWER_RUNTIME", "DEPENDENCY_MISSING"):
+            verdict = getattr(self, "_runnability", None)
+            if verdict is not None and verdict.remediation:
+                self.runnability_notice.clear_actions()
+                self.runnability_notice.add_action("Fix runtime environment…",
+                                                   lambda: self._fix_runtime_environment(verdict), "primary")
+                self.runnability_notice.show()
+
+    def _fix_runtime_environment(self, verdict: Any) -> None:
+        """Agent Runtime remediation: build an isolated env with the packages the model needs.
+
+        ``NEEDS_NEWER_RUNTIME`` gets a fresh base environment with the latest transformers;
+        ``NEEDS_COMPONENT`` gets the profile that ships the missing engine.
+        """
+        from noelle.runtime import environment_manager
+        from noelle.runtime.agent.environment_planner import plan_for_verdict
+
+        plan = plan_for_verdict(verdict)
+        if plan is None or not plan.actionable:
+            return
+        detail = ", ".join(plan.packages) if plan.packages else ", ".join(plan.profiles)
+        answer = QMessageBox.question(
+            self, "Create a compatible runtime environment?",
+            f"Noelle can build an isolated environment with:\n\n{detail}\n\n"
+            f"Profiles: {', '.join(plan.profiles)}\n\nThis downloads packages once and leaves the "
+            "application's own Python untouched. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        existing = [env["name"] for env in environment_manager.list_environments()]
+        name = plan.suggested_name(existing)
+        self.runnability_notice.set_text("<b>Building the runtime environment…</b> This can take several minutes.")
+
+        def work(progress: Any) -> dict[str, Any]:
+            return environment_manager.create_environment(name, plan.profiles, progress=progress)
+
+        def progress(line: Any) -> None:
+            self.runnability_notice.set_text(f"<b>Building {html.escape(name)}…</b> {html.escape(str(line))}")
+
+        def done(info: dict[str, Any]) -> None:
+            self.ctx.settings.set("runtime.environment", info.get("name") or name)
+            self.ctx.toast(f"Runtime environment '{name}' is ready — restarting the model runtime.", "success")
+            self.load_status.setText("Runtime environment updated. Press Load model again once it is ready.")
+            self.ctx.runtime.restart()
+
+        runner().submit(work, on_progress=progress, on_result=done,
+                        on_error=lambda message: self.runnability_notice.set_text(
+                            error_html(f"Could not build the environment: {message}")))
 
     # ======================================================== remote code
     def _render_remote_code(self, force: bool = False) -> None:

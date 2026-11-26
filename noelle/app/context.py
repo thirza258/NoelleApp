@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from noelle.config import Settings
-from noelle.runtime import advisor, capabilities
+from noelle.runtime import advisor, capabilities, runnability
 from noelle.runtime.preflight import Compatibility
 
 from noelle.app.services.hf_client import HFClient, ModelSummary
@@ -54,11 +54,22 @@ class AppContext:
         return {r.precision: r.repo_id for r in self.registry.list_models()
                 if r.base_model == repo_id and r.source == "quantized" and r.exists_on_disk()}
 
+    def runtime_facts(self) -> runnability.RuntimeFacts | None:
+        """Model types/backends reported by the worker (None until its HELLO result arrives)."""
+        payload = getattr(self.runtime, "runtime_caps", None)
+        return runnability.RuntimeFacts.from_payload(payload) if payload else None
+
+    def runnability(self, model: Any, *, config: dict[str, Any] | None = None,
+                    has_access: bool | None = None) -> runnability.RunnabilityResult:
+        """One verdict for a Hub summary/registry record using the worker's runtime facts."""
+        return runnability.assess_model(model, config=config, facts=self.runtime_facts(), has_access=has_access)
+
     def assess(self, model: Any, *, config: dict[str, Any] | None = None, profile: str = "balanced",
                tokenizer_config: dict[str, Any] | None = None, measured: bool = True,
                session_trusted: bool = False) -> advisor.Assessment:
         cfg = config or getattr(model, "config", None) or None
-        cap = capabilities.analyze(model, cfg, tokenizer_config=tokenizer_config)
+        cap = capabilities.analyze(model, cfg, tokenizer_config=tokenizer_config,
+                                  runtime_facts=self.runtime_facts())
         rows = self.registry.measurements(cap.model_id) if measured else []
         return advisor.assess(cap, self.hardware_profile(), config=cfg, profile=profile,
                               measured=advisor.summarize_measurements(rows),

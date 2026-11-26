@@ -1,0 +1,5 @@
+{
+  "architectures": ["Qwen2ForCausalLM"],
+  "model_type": "qwen2",
+  "torch_dtype": "bfloat16"
+}

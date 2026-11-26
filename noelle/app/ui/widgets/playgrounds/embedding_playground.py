@@ -16,9 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from noelle.app import theme
 from noelle.app.context import AppContext
-from noelle.app.ui.widgets.common import SearchField, Spinner, button, label
+from noelle.app.ui.widgets.common import ErrorLine, SearchField, Spinner, button, label
 from noelle.runtime.protocol import Command
 
 SAMPLE_DOCS = """Noelle runs open-weight models locally on your GPU.
@@ -60,8 +59,10 @@ class EmbeddingPlayground(QWidget):
         self.docs = QPlainTextEdit(SAMPLE_DOCS)
         self.docs.setFixedHeight(130)
         root.addWidget(self.docs)
-        self.status = label("", "faint")
+        self.status = label("", "faint", wrap=True)
         root.addWidget(self.status)
+        self.error = ErrorLine()
+        root.addWidget(self.error)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Score", "", "Passage"])
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -75,6 +76,7 @@ class EmbeddingPlayground(QWidget):
         docs = [line.strip() for line in self.docs.toPlainText().splitlines() if line.strip()]
         if not query or not docs:
             return
+        self.error.clear()
         self.spinner.start()
         self.run_btn.setEnabled(False)
         handle = self.ctx.runtime.request(Command.EMBED, {**self.payload(), "inputs": [query, *docs]})
@@ -105,4 +107,6 @@ class EmbeddingPlayground(QWidget):
     def _failed(self, payload: dict[str, Any]) -> None:
         self.spinner.stop()
         self.run_btn.setEnabled(True)
-        self.status.setText(f"<span style='color:{theme.DANGER}'>{payload.get('message')}</span>")
+        self.status.setText("Failed.")
+        self.error.set_error(str(payload.get("message") or "Embedding failed."),
+                             str(payload["hint"]) if payload.get("hint") else None)

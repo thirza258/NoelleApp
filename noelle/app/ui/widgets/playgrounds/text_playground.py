@@ -101,6 +101,11 @@ class TextPlayground(QWidget):
         self.history: list[dict[str, str]] = []
         self._handle: Any = None
         self._current: MessageView | None = None
+        # Chat history (F2): a separate chats.db; private mode never touches it.
+        self._store: Any = None
+        self._conversation_id: int | None = None
+        self._restored = False
+        self._last_sources: list[dict[str, Any]] = []
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root = QHBoxLayout(self)
@@ -193,6 +198,48 @@ class TextPlayground(QWidget):
     # ---------------------------------------------------------- lifecycle
     def on_activated(self) -> None:
         self.refresh_collections()
+        self._restore_last_conversation()
+
+    # ---------------------------------------------------------- chat history
+    def _saving(self) -> bool:
+        return bool(self.ctx.settings.get("chats.save", True))
+
+    def _conversations(self) -> Any:
+        if self._store is None:
+            from noelle.app.services.conversation_store import ConversationStore
+
+            self._store = ConversationStore()
+        return self._store
+
+    def _restore_last_conversation(self) -> None:
+        if self._restored or not self._saving() or self.history:
+            self._restored = True
+            return
+        self._restored = True
+        try:
+            store = self._conversations()
+            recent = store.list_conversations(limit=1)
+            if not recent:
+                return
+            data = store.get_conversation(recent[0]["id"])
+        except Exception:  # noqa: BLE001 - history is a convenience, never a startup blocker
+            return
+        if not data:
+            return
+        self._conversation_id = data["id"]
+        if data.get("system_prompt"):
+            self.system_prompt.setPlainText(data["system_prompt"])
+        for message in data.get("messages") or []:
+            role = message.get("role")
+            if role not in ("user", "assistant") or not message.get("content"):
+                continue
+            self.history.append({"role": role, "content": message["content"]})
+            view = self.canvas.add_message(role, message["content"], "" if role == "user" else self.display_name())
+            if message.get("sources"):
+                view.set_sources(message["sources"])
+                self._last_sources = message["sources"]
+            if message.get("metrics"):
+                view.set_metrics(message["metrics"])
 
     def refresh_collections(self) -> None:
         handle = self.ctx.runtime.request(Command.RAG_LIST_COLLECTIONS)
@@ -221,6 +268,9 @@ class TextPlayground(QWidget):
         self.history.clear()
         self.canvas.clear()
         self.sources.set_sources([])
+        self._conversation_id = None
+        self._restored = True
+        self._last_sources = []
 
     def _send_or_stop(self) -> None:
         if self._handle is not None:
@@ -238,6 +288,17 @@ class TextPlayground(QWidget):
         self.composer.clear()
         self.canvas.add_message("user", text)
         self.history.append({"role": "user", "content": text})
+        if self._saving():
+            try:
+                store = self._conversations()
+                if self._conversation_id is None:
+                    self._conversation_id = store.create_conversation(
+                        model_id=str(self.payload().get("model_id") or ""),
+                        system_prompt=self.system_prompt.toPlainText().strip() or None,
+                        params=self.params.values())
+                store.add_message(self._conversation_id, "user", text)
+            except Exception:  # noqa: BLE001 - saving must not block sending
+                self._conversation_id = None
         view = self.canvas.add_message("assistant", "", self.display_name())
         view.set_busy(True, "waiting for the runtime…")
         self._current = view
@@ -274,6 +335,7 @@ class TextPlayground(QWidget):
 
     def _on_context(self, payload: dict[str, Any]) -> None:
         sources = payload.get("sources") or []
+        self._last_sources = sources
         self.sources.set_sources(sources)
         if self._current is not None:
             self._current.set_sources(sources)
@@ -285,6 +347,14 @@ class TextPlayground(QWidget):
             view.set_text(payload.get("text", view.text))
             view.set_metrics(payload.get("metrics") or {})
         self.history.append({"role": "assistant", "content": payload.get("text", "")})
+        if self._saving() and self._conversation_id is not None:
+            try:
+                self._conversations().add_message(
+                    self._conversation_id, "assistant", str(payload.get("text", "")),
+                    sources=self._last_sources or None, metrics=payload.get("metrics"))
+            except Exception:  # noqa: BLE001
+                pass
+        self._last_sources = []
         self._done()
 
     def _on_failed(self, payload: dict[str, Any]) -> None:

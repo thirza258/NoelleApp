@@ -46,6 +46,14 @@ class Unsupported(NoelleRuntimeError):
     code = ErrorCode.UNSUPPORTED
 
 
+class NeedsNewerRuntime(Unsupported):
+    code = ErrorCode.NEEDS_NEWER_RUNTIME
+
+
+class Gated(NoelleRuntimeError):
+    code = ErrorCode.GATED
+
+
 class DependencyMissing(NoelleRuntimeError):
     code = ErrorCode.DEPENDENCY_MISSING
 

@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from noelle.app import theme
 from noelle.app.context import AppContext
-from noelle.app.ui.widgets.common import button, icon_button, label
+from noelle.app.ui.widgets.common import ErrorLine, button, icon_button, label
 from noelle.runtime.protocol import Command
 
 SIZES = [("512 × 512", (512, 512)), ("768 × 768", (768, 768)), ("1024 × 1024", (1024, 1024)),
@@ -152,6 +152,8 @@ class DiffusionPlayground(QWidget):
         self.reuse_btn.setEnabled(False)
         status_row.addWidget(self.reuse_btn)
         view.addLayout(status_row)
+        self.error = ErrorLine()
+        view.addWidget(self.error)
         self.gallery = QListWidget()
         self.gallery.setViewMode(QListWidget.ViewMode.IconMode)
         self.gallery.setIconSize(QSize(72, 72))
@@ -210,6 +212,7 @@ class DiffusionPlayground(QWidget):
                    "steps": self.steps.value(), "guidance": self.guidance.value() / 10, "seed": self.seed.value(),
                    "width": width, "height": height, "init_image": self.init_image,
                    "strength": self.strength.value() / 100, "preview_every": 1}
+        self.error.clear()
         self.progress.setValue(0)
         self.status.setText("Loading pipeline…")
         handle = self.ctx.runtime.request(Command.GENERATE_IMAGE, payload)
@@ -255,8 +258,9 @@ class DiffusionPlayground(QWidget):
         if payload.get("code") == "CANCELLED":
             self.status.setText("Stopped.")
             return
-        self.status.setText(f"<span style='color:{theme.DANGER}'>{payload.get('message')}</span>"
-                            + (f" — {payload['hint']}" if payload.get("hint") else ""))
+        self.status.setText("Failed.")
+        self.error.set_error(str(payload.get("message") or "Image generation failed."),
+                             str(payload["hint"]) if payload.get("hint") else None)
 
     def _reset(self) -> None:
         self._handle = None

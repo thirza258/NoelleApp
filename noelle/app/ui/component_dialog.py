@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QVBoxL
 from noelle.app import icons, theme
 from noelle.app.services import components
 from noelle.app.services.task_runner import runner
-from noelle.app.ui.widgets.common import Spinner, button, label
+from noelle.app.ui.widgets.common import Spinner, button, error_html, label
 from noelle.runtime.preflight import format_bytes
 
 
@@ -82,8 +82,7 @@ class ComponentInstallDialog(QDialog):
 
     def _resolve_failed(self, message: str) -> None:
         self.spinner.stop()
-        self.details.setText(f"<span style='color:{theme.DANGER}'>Could not look up llama.cpp releases: "
-                             f"{message}</span>")
+        self.details.setText(error_html(f"Could not look up llama.cpp releases: {message}"))
         self.cancel_btn.setText("Close")
 
     def _install(self) -> None:
@@ -131,7 +130,7 @@ class ComponentInstallDialog(QDialog):
         self.progress.hide()
         cancelled = self._stop.is_set()
         self.status.setText("Cancelled — nothing was installed." if cancelled else
-                            f"<span style='color:{theme.DANGER}'>Install failed: {message}</span>")
+                            error_html(f"Install failed: {message}"))
         self.cancel_btn.setText("Close")
         self.install_btn.setEnabled(not cancelled and self.release is not None)
         self._stop.clear()

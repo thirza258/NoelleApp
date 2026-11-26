@@ -82,8 +82,12 @@ class WorkflowRunner:
         self.node_callback = node_callback
 
     def execute(self, graph: WorkflowGraph, initial_inputs: dict[str, Any] | None = None,
-                consent_given: bool = True) -> WorkflowResult:
-        """Run workflow graph to completion."""
+                consent_given: bool = False) -> WorkflowResult:
+        """Run workflow graph to completion.
+
+        Consent defaults to **false**: a graph with cloud nodes fails closed unless the caller
+        (UI/CLI) explicitly recorded the user's consent for this run.
+        """
         start_time = time.perf_counter()
 
         # 1. Privacy Governance Check

@@ -42,6 +42,7 @@ SPEC_FILTER_OPTIONS = [
     ("Runs natively", "green"),
     ("Needs 4-bit", "yellow"),
 ]
+RUNS_FILTER_OPTIONS = [("Runs in Noelle", "runs"), ("All models", "all")]
 
 
 class DiscoveryPage(QWidget):
@@ -127,6 +128,13 @@ class DiscoveryPage(QWidget):
             self.spec_filter.addItem(text, key)
         self.spec_filter.setFixedWidth(145)
         header.addWidget(self.spec_filter)
+        self.runs_filter = QComboBox()
+        for text, key in RUNS_FILTER_OPTIONS:
+            self.runs_filter.addItem(text, key)
+        self.runs_filter.setFixedWidth(150)
+        self.runs_filter.setToolTip("Hide models Noelle has no engine for (Kokoro, OmniVoice, single-file "
+                                    "diffusion checkpoints, ONNX-only repos, …)")
+        header.addWidget(self.runs_filter)
         self.refresh_btn = icon_button("refresh", "Refresh")
         header.addWidget(self.refresh_btn)
         column.addLayout(header)
@@ -141,6 +149,8 @@ class DiscoveryPage(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid = ModelCardGrid(self.scroll)
         self.grid.set_compat_function(self.ctx.compat)
+        self.grid.set_runnability_function(self.ctx.runnability)
+        self.grid.set_runs_filter(True)
         self.grid.model_selected.connect(self.model_selected)
         self.grid.load_more_requested.connect(self.load_more)
         container = QWidget()
@@ -163,6 +173,7 @@ class DiscoveryPage(QWidget):
         self.search.returnPressed.connect(self.reload)
         self.sort.currentIndexChanged.connect(lambda _i: self.reload())
         self.spec_filter.currentIndexChanged.connect(self._on_spec_filter_changed)
+        self.runs_filter.currentIndexChanged.connect(self._on_runs_filter_changed)
         self.refresh_btn.clicked.connect(self.reload)
 
         ctx.hardware.hardware_telemetry_updated.connect(self._on_hardware)
@@ -205,6 +216,7 @@ class DiscoveryPage(QWidget):
         self.grid.set_downloaded(self.ctx.downloaded_ids())
         self.grid.clear()
         self.grid.set_spec_filter(self.spec_filter.currentData() or "all")
+        self.grid.set_runs_filter(self.runs_filter.currentData() != "all")
         if self._category == "library":
             records = [r for r in self.ctx.registry.list_models() if r.exists_on_disk()]
             self.grid.set_models([summary_from_record(r) for r in records])
@@ -281,6 +293,12 @@ class DiscoveryPage(QWidget):
         self.grid.set_spec_filter(key)
         visible_count = sum(1 for c in self.grid.cards if self.grid._card_matches_spec(c))
         if key != "all" and visible_count < 10 and self._pager and not self._pager.exhausted:
+            self.load_more()
+
+    def _on_runs_filter_changed(self, _index: int = 0) -> None:
+        self.grid.set_runs_filter(self.runs_filter.currentData() != "all")
+        visible_count = sum(1 for c in self.grid.cards if self.grid._card_matches_spec(c))
+        if visible_count < 10 and self._pager and not self._pager.exhausted:
             self.load_more()
 
     # --------------------------------------------------------------- events

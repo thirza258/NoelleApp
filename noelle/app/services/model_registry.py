@@ -197,6 +197,7 @@ class ModelRecord:
             "task": self.pipeline_tag or "text-generation",
             "precision": self.precision,
             "trust_remote_code": bool(trusted),
+            "library_name": self.library_name,
         }
         if self.local_path:
             payload["local_path"] = self.local_path

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QUrl
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QInputDialog,
@@ -369,6 +371,13 @@ class SettingsDialog(QDialog):
         rerun = button("Run setup assistant…", "wand")
         rerun.clicked.connect(self._run_assistant)
         layout.addWidget(rerun)
+        report = button("Report a problem…", "alert")
+        report.setToolTip("Builds a redacted diagnostics zip locally; nothing is uploaded")
+        report.clicked.connect(self._report_problem)
+        layout.addWidget(report)
+        check = button("Check for updates now", "refresh")
+        check.clicked.connect(self._check_updates)
+        layout.addWidget(check)
         for caption, path in (("Data folder", paths.home()), ("Logs", paths.logs_dir()),
                               ("Exports", paths.exports_dir())):
             btn = button(f"Open {caption.lower()} — {path}", "folder", "link")
@@ -381,6 +390,55 @@ class SettingsDialog(QDialog):
         from noelle.app.ui.setup_assistant import run_assistant
 
         run_assistant(self.ctx, self)
+
+    def _check_updates(self) -> None:
+        from noelle.app.services import update_checker
+
+        if self.ctx.settings.get("privacy.local_only", False):
+            QMessageBox.information(self, "Local-only mode",
+                                    "Update checks are disabled while Local-only mode is on.")
+            return
+
+        def work() -> Any:
+            return update_checker.check_app()
+
+        def done(update: Any) -> None:
+            if update is None:
+                QMessageBox.information(self, "No updates", "You are running the latest stable version.")
+            else:
+                QMessageBox.information(self, "Update available",
+                                        f"Noelle {update.version} is available.\n\n{update.notes[:600]}\n\n"
+                                        f"{update.url}")
+
+        runner().submit(work, on_result=done, on_error=lambda message: QMessageBox.warning(
+            self, "Update check failed", message))
+
+    def _report_problem(self) -> None:
+        from noelle.app.services import diagnostics
+
+        description, ok = QInputDialog.getMultiLineText(
+            self, "Report a problem",
+            "What happened? (paths and credentials are removed from the report)")
+        if not ok:
+            return
+        target, _ = QFileDialog.getSaveFileName(self, "Save diagnostics report",
+                                                str(Path.home() / "noelle-report.zip"), "Zip (*.zip)")
+        if not target:
+            return
+
+        def work() -> Any:
+            return diagnostics.build_report(
+                target, description=description, settings=self.ctx.settings,
+                loaded_models=getattr(self.ctx.runtime, "loaded_models", []),
+                runtime_caps=getattr(self.ctx.runtime, "runtime_caps", {}),
+                log_dir=paths.logs_dir())
+
+        runner().submit(
+            work,
+            on_result=lambda path: QMessageBox.information(
+                self, "Report saved",
+                f"Saved to:\n{path}\n\nReview the zip before sharing it. Noelle did not upload anything."),
+            on_error=lambda message: QMessageBox.warning(self, "Report not saved", message))
 
     # --------------------------------------------------------------- token
     def _verify_token(self) -> None:
