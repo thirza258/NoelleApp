@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noelle"
-version = "1.3.0"
+version = "1.3.3"
 description = "Noelle Desktop AI Studio: a local-first workbench for discovering, running, comparing and serving Hugging Face models."
 readme = "README.md"
 license = "MIT"
