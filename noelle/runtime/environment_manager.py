@@ -66,7 +66,7 @@ PROFILES: dict[str, Profile] = {
                  "keyring>=25", "pyyaml>=6", "httpx>=0.27",
                  "tzdata>=2024.1; sys_platform == 'win32'"),
                 ("torch", "transformers", "accelerate", "safetensors", "numpy", "PIL", "soundfile", "zmq",
-                 "psutil", "huggingface_hub", "keyring", "yaml", "httpx", "tzdata")),
+                 "psutil", "huggingface_hub", "keyring", "yaml", "httpx")),
         Profile("diffusion", "Text-to-image and image-to-image pipelines (diffusers).",
                 ("diffusers>=0.30",), ("diffusers",)),
         Profile("rag", "Document chat: sentence embeddings, PDF/DOCX readers and the sqlite-vec index.",
