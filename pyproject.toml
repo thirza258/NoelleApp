@@ -26,6 +26,7 @@ dependencies = [
     "keyring>=25",
     "pyyaml>=6",  # evaluation recipes, environment lockfiles
     "httpx>=0.27",  # MCP server -> local API (also used by huggingface_hub)
+"tzdata>=2024.1; sys_platform == 'win32'",  # IANA zones for the current_datetime tool
 ]
 
 [project.optional-dependencies]

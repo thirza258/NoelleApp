@@ -117,12 +117,25 @@ def calculator(expression: str) -> ToolResult:
         return ToolResult("calculator", False, "", error=str(exc))
 
 
+_FIXED_OFFSETS = {"Asia/Jakarta": 7, "Asia/Makassar": 8, "Asia/Jayapura": 9, "UTC": 0, "Etc/UTC": 0}
+
+
 def current_datetime(timezone: str | None = None) -> ToolResult:
     try:
         if timezone:
             from zoneinfo import ZoneInfo
 
-            moment = datetime.now(ZoneInfo(timezone))
+            try:
+                moment = datetime.now(ZoneInfo(timezone))
+            except Exception:
+                # Windows Python has no IANA database unless "tzdata" is installed; keep the
+                # common Indonesian zones usable with their fixed offsets.
+                offset = _FIXED_OFFSETS.get(timezone)
+                if offset is None:
+                    raise
+                from datetime import timedelta, timezone as dt_timezone
+
+                moment = datetime.now(dt_timezone(timedelta(hours=offset), timezone))
         else:
             moment = datetime.now().astimezone()
     except Exception as exc:  # noqa: BLE001
