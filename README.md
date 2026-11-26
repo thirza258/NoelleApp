@@ -204,6 +204,11 @@ cache. Storage tests build fake caches in temporary directories.
 `NOELLE_NOTARY_PROFILE` (macOS) or `NOELLE_WIN_CERT_PATH` / `NOELLE_WIN_CERT_PASSWORD` (Windows) from the
 environment. `.github/workflows/release.yml` builds macOS, Linux and Windows artifacts on `v*` tags.
 
+## Documentation & Changelog
+
+* Full documentation: [https://noelle.nevatal.id/docs/](https://noelle.nevatal.id/docs/)
+* Release history: [CHANGELOG.md](CHANGELOG.md) or [https://noelle.nevatal.id/docs/changelog/](https://noelle.nevatal.id/docs/changelog/)
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

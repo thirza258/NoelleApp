@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Changelog — Noelle docs</title>
+  <meta name="description" content="Complete release history, new capabilities, and improvements across every version of Noelle.">
+  <link rel="canonical" href="https://noelle.nevatal.id/docs/changelog/">
+  <link rel="describedby" type="text/markdown" href="../../auth.md">
+  <link rel="alternate" type="text/markdown" href="../../llms.txt" title="LLM Overview">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Changelog — Noelle docs">
+  <meta property="og:description" content="Complete release history, new capabilities, and improvements across every version of Noelle.">
+  <meta property="og:url" content="https://noelle.nevatal.id/docs/changelog/">
+  <meta property="og:image" content="https://noelle.nevatal.id/assets/screens/mission-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#FFC700" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0B0D" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="../../assets/favicon.png">
+  <link rel="stylesheet" href="../../styles.css">
+  <script>(function () { var t = null; try { t = localStorage.getItem("noelle-theme"); } catch (e) {}
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); })();</script>
+  <script src="../../config.js"></script>
+  <script src="../../agent.js" defer></script>
+  <script src="../../main.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.9 17a8 8 0 1 1 14.2 0"/><path d="M12 13l4-4"/><circle cx="12" cy="13" r="1.2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    </defs></svg>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="../../" aria-label="Noelle home">
+        <img src="../../assets/noelle.png" alt="" width="30" height="30"><span>Noelle</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="../../#features">Features</a>
+        <a href="../../docs/" aria-current="page">Docs</a>
+        <a href="../../docs/quickstart/">Quick start</a>
+        <a href="../../docs/api/">API</a>
+        <a href="../../#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn menu-btn" type="button" data-menu aria-label="Menu" aria-expanded="false">
+          <svg class="icon"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="icon show-light"><use href="#i-moon"/></svg><svg class="icon show-dark"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-primary btn-small" href="../../#download" data-link="download">
+          <svg class="icon"><use href="#i-download"/></svg><span>Download</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="container docs" id="top">
+    <aside class="docs-nav" aria-label="Documentation"><h4>Get started</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li></ul><h4>Using Noelle</h4><ul><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul><h4>Developers</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li></ul><h4>Reference</h4><ul><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/terms/">Terms of Service</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li><li><a href="../../docs/changelog/" aria-current="page">Changelog</a></li></ul></aside>
+    <article class="prose">
+      <h1>Changelog</h1>
+      <p class="page-lead">Complete release history, new capabilities, and improvements across every version of Noelle.</p>
+<p>All notable changes to the Noelle Desktop AI Studio, CLI, local API, and ecosystem are documented here.
+Versions adhere to <a href="https://semver.org/" rel="noopener">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="version-1-2-0-november-26-2026">Version 1.2.0 — November 26, 2026<a class="heading-anchor" href="#version-1-2-0-november-26-2026" aria-label="Link to this section">#</a></h2>
+<p>Version 1.2.0 introduces runtime runnability preflight checks, gated model access flows, resilient UI error handling, the foundation for autonomous agent workflows, and expanded local service backends.</p>
+<h3 id="model-runnability-compatibility-preflight">Model runnability &amp; compatibility preflight<a class="heading-anchor" href="#model-runnability-compatibility-preflight" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Shared pure-Python runnability rules</strong>: Replaced tag-only heuristics with a unified evaluation engine (<code>noelle/runtime/runnability.py</code>) executed across both the desktop UI and the out-of-process worker daemon.</li>
+<li><strong>Worker capability advertising</strong>: The worker <code>HELLO</code> handshake now publishes dynamic <code>RUNTIME_CAPS</code>, ensuring the UI accurately reflects installed accelerators and libraries.</li>
+<li><strong>Discover &quot;Runs in Noelle&quot; filter</strong>: Added an instant toggle on the Discover page to hide models that cannot execute on the current machine.</li>
+<li><strong>Runnability verdict badges</strong>: Every model card and detail header displays a crystal-clear verdict (<code>Runs natively</code>, <code>Needs 4-bit build</code>, <code>CPU fallback</code>, <code>Requires newer runtime</code>, or <code>Unsupported architecture</code>).</li>
+<li><strong>Typed load failure codes</strong>: Failures now report clean codes (<code>UNSUPPORTED</code>, <code>NEEDS_NEWER_RUNTIME</code>, <code>GATED</code>) rather than raw library stack traces, with all local filesystem cache paths sanitized and scrubbed.</li>
+</ul>
+<h3 id="gated-model-access-download-flow">Gated model access &amp; download flow<a class="heading-anchor" href="#gated-model-access-download-flow" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Preflight authentication check</strong>: Download requests verify access against <code>HfApi.auth_check</code> before starting multi-gigabyte file transfers.</li>
+<li><strong>Terminal GATED state</strong>: Replaced generic retry loops with a dedicated <code>GATED</code> status and an immediate <strong>Open model page</strong> action to accept license agreements or request repository permissions on Hugging Face.</li>
+</ul>
+<h3 id="ui-diagnostics-error-resilience">UI diagnostics &amp; error resilience<a class="heading-anchor" href="#ui-diagnostics-error-resilience" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Shared <code>ErrorLine</code> component</strong>: Model errors are presented in a selectable, copyable, and wrapped container with an integrated <strong>Open logs</strong> button.</li>
+<li><strong>Toast notification lifecycle guard</strong>: Bound download slots and state timers to prevent race conditions and crashes during rapid UI tab switching.</li>
+<li><strong>Diagnostics bundle exporter</strong>: Built-in diagnostics service (<code>noelle/app/services/diagnostics.py</code>) to gather anonymized runtime status, device telemetry, and log excerpts for troubleshooting.</li>
+</ul>
+<h3 id="autonomous-agent-runtime-foundation">Autonomous agent runtime foundation<a class="heading-anchor" href="#autonomous-agent-runtime-foundation" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Repository analyzer</strong>: Added <code>noelle/runtime/agent/repository_analyzer.py</code> for automated code inspection, dependency discovery, and agent task planning.</li>
+<li><strong>Environment planner</strong>: Built <code>noelle/runtime/agent/environment_planner.py</code> featuring automated environment verification and resolution loops.</li>
+<li><strong>Runtime adapter factory</strong>: Introduced modular adapter interfaces (<code>noelle/runtime/adapters/</code>) for extensible agent execution.</li>
+</ul>
+<h3 id="v1-2-core-services-multi-model-routing">v1.2 Core services &amp; multi-model routing<a class="heading-anchor" href="#v1-2-core-services-multi-model-routing" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Conversation store</strong>: Multi-turn conversation persistence powered by SQLite (<code>noelle/app/services/conversation_store.py</code>).</li>
+<li><strong>Background update checker</strong>: Privacy-preserving update notifications for the desktop application and downloaded Hub models (<code>noelle/app/services/update_checker.py</code>), strictly throttled to 24-hour intervals and disabled when local-only mode is active.</li>
+<li><strong>External model discovery</strong>: Scan and register local models from Ollama and LM Studio (<code>noelle/app/services/external_models.py</code>).</li>
+<li><strong>Provider management &amp; cost ledger</strong>: Track query costs and token quotas across local and remote backends (<code>noelle/app/services/provider_manager.py</code>, <code>noelle/app/services/cost_ledger.py</code>).</li>
+<li><strong>Intelligent model router</strong>: Route incoming tasks automatically to the best available model based on capability and cost (<code>noelle/app/services/model_router.py</code>).</li>
+</ul>
+<h3 id="verification-tests">Verification &amp; tests<a class="heading-anchor" href="#verification-tests" aria-label="Link to this section">#</a></h3>
+<ul>
+<li>Comprehensive test fixture matrix covering all supported checkpoint families: ASR (CTranslate2, NeMo), Diffusion (Single-file, SD), Embeddings (Model2Vec, Sentence-Transformers), Text (GGUF, ONNX, Transformers), TTS (Kokoro, OmniVoice, Stable Audio 3), and Vision/VLM.</li>
+<li>End-to-end and unit regression suites for desktop UI lifecycle stability.</li>
+</ul>
+<hr />
+<h2 id="version-1-1-1-november-25-2026">Version 1.1.1 — November 25, 2026<a class="heading-anchor" href="#version-1-1-1-november-25-2026" aria-label="Link to this section">#</a></h2>
+<p>Version 1.1.1 brings PyTorch CUDA 13.2 support for Windows and high-precision telemetry for low-latency nodes.</p>
+<h3 id="performance-hardware-builds">Performance &amp; hardware builds<a class="heading-anchor" href="#performance-hardware-builds" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>CUDA 13.2 for Windows</strong>: Updated Windows standalone installer packages with PyTorch CUDA 13.2 wheels (<code>cu132</code>) for CPython 3.11–3.14.</li>
+<li><strong>Optimized Linux footprint</strong>: Maintained a lightweight, CPU-optimized distribution for Linux releases to keep downloads under 2 GB.</li>
+<li><strong>High-precision Windows telemetry</strong>: Switched node latency measurement on Windows from <code>time.monotonic()</code> (~15.6 ms resolution) to <code>time.perf_counter()</code> for microsecond profiling accuracy.</li>
+</ul>
+<hr />
+<h2 id="version-1-1-0-november-25-2026">Version 1.1.0 — November 25, 2026<a class="heading-anchor" href="#version-1-1-0-november-25-2026" aria-label="Link to this section">#</a></h2>
+<p>Version 1.1.0 adds the Hybrid Cloud + Local AI Workflow Studio, comprehensive financial cost modeling, and adversarial model evaluation labs.</p>
+<h3 id="hybrid-cloud-local-ai-workflow-studio">Hybrid Cloud + Local AI Workflow Studio<a class="heading-anchor" href="#hybrid-cloud-local-ai-workflow-studio" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Visual Workflow Canvas</strong>: Node-based graphical workspace (<code>noelle/workflow/</code>) allowing users to assemble multi-stage pipelines combining LLM, Embedding, Speech-to-Text, Speech Synthesis, Vision, and RAG nodes.</li>
+<li><strong>Cycle detection &amp; graph validation</strong>: Strict topological execution graph with instant cycle detection.</li>
+<li><strong>Zero Egress Local-Only enforcement</strong>: Built-in privacy gate guaranteeing that sensitive local pipelines never transmit data or tokens across external network boundaries.</li>
+<li><strong>Unified Provider Engine</strong>: Seamlessly switch or chain nodes between Local models, OpenAI, and OpenRouter backends (<code>noelle/providers/</code>).</li>
+<li><strong>Real-time telemetry</strong>: Per-node and end-to-end latency tracking, VRAM allocation profiling, and token pricing calculated using live provider tariffs.</li>
+</ul>
+<h3 id="financial-decision-advisor-cost-accounting">Financial Decision Advisor &amp; cost accounting<a class="heading-anchor" href="#financial-decision-advisor-cost-accounting" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Cost Advisor</strong>: Built-in financial analysis engine (<code>noelle/services/cost_advisor.py</code>) that computes break-even query thresholds, Total Cost of Ownership (TCO), and capital expenditure payback periods comparing local hardware investments against cloud API tariffs.</li>
+</ul>
+<h3 id="adversarial-evaluation-labs">Adversarial Evaluation Labs<a class="heading-anchor" href="#adversarial-evaluation-labs" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Adversarial test generators</strong>: Built generators for demanding evaluation domains (<code>noelle/evaluation/generators/</code>), including Indonesian currency and technical jargon TTS synthesis, STT Levenshtein Word/Character Error Rate (WER/CER) scoring, and dense embedding retrieval benchmarks.</li>
+<li><strong>Domain labs</strong>: Added specialized Audio A/B Lab (<code>audio_ab_lab.py</code>) and Embedding Lab (<code>embedding_lab.py</code>).</li>
+</ul>
+<h3 id="cli-workflow-tools">CLI workflow tools<a class="heading-anchor" href="#cli-workflow-tools" aria-label="Link to this section">#</a></h3>
+<ul>
+<li>Added command-line interfaces for headless automation:
+<ul>
+<li><code>noelle workflow run</code>: Execute workflow pipelines headlessly in CI or scripts.</li>
+<li><code>noelle workflow test-gen</code>: Synthesize reproducible adversarial test datasets.</li>
+<li><code>noelle workflow advisor</code>: Run financial break-even analysis from the command line.</li>
+</ul>
+</li>
+</ul>
+<h3 id="system-hardening">System hardening<a class="heading-anchor" href="#system-hardening" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Atomic settings persistence</strong>: Implemented fsynced atomic configuration writes to eliminate corruption during unexpected shutdowns.</li>
+<li><strong>Bounded IPC payloads</strong>: Safeguarded ZeroMQ IPC communications against oversized message buffer overruns.</li>
+<li><strong>Graceful child process termination</strong>: Clean teardown of download and extraction subprocesses.</li>
+<li><strong>Qt unhandled exception logging</strong>: Centralized error logging for uncaught PySide6 exceptions.</li>
+</ul>
+<hr />
+<h2 id="version-1-0-1-november-23-24-2026">Version 1.0.1 — November 23–24, 2026<a class="heading-anchor" href="#version-1-0-1-november-23-24-2026" aria-label="Link to this section">#</a></h2>
+<p>Version 1.0.1 launched the documentation portal, official distribution channels, security hardening, and agent discovery metadata.</p>
+<h3 id="documentation-web-portal">Documentation &amp; web portal<a class="heading-anchor" href="#documentation-web-portal" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Official documentation</strong>: Published 14 comprehensive guides on <code>noelle.nevatal.id</code> covering setup, quantization, evaluation, RAG, API, MCP, and troubleshooting.</li>
+<li><strong>Automated site generator</strong>: Custom static site generator (<code>landing/build.py</code>) with automatic sitemap generation, theme synchronization, and navigation compilation.</li>
+<li><strong>SourceForge distribution</strong>: Configured official distribution mirrors on SourceForge for Windows <code>.exe</code>, macOS <code>.pkg</code>/<code>.dmg</code>, and Linux <code>.deb</code> installers.</li>
+</ul>
+<h3 id="ai-agent-discovery-standards">AI agent discovery &amp; standards<a class="heading-anchor" href="#ai-agent-discovery-standards" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Agent Cards &amp; catalogs</strong>: Added RFC-compliant discovery metadata including <code>.well-known/agent-card.json</code>, <code>ai-catalog.json</code>, <code>api-catalog</code>, and OAuth authorization server manifests.</li>
+<li><strong>LLM context overview</strong>: Added machine-readable architecture and usage specification via <code>llms.txt</code>.</li>
+<li><strong>WebMCP integration</strong>: Web-accessible MCP tool definitions for browser-based agents.</li>
+</ul>
+<h3 id="security-platform-packaging">Security &amp; platform packaging<a class="heading-anchor" href="#security-platform-packaging" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Local API security hardening</strong>: Added <code>HostGuardMiddleware</code> blocking DNS rebinding attacks by restricting <code>Host</code> headers to loopback addresses (<code>127.0.0.1</code>, <code>localhost</code>, <code>[::1]</code>). Required strict <code>application/json</code> content-type to block cross-site simple POST requests.</li>
+<li><strong>Windows Unicode fix</strong>: Resolved UTF-8 command-line encoding issues in the Windows PyInstaller launcher.</li>
+<li><strong>Ecosystem branding</strong>: Applied the Nevatal yellow theme palette across the desktop app and documentation.</li>
+</ul>
+<hr />
+<h2 id="version-1-0-0-november-23-2026">Version 1.0.0 — November 23, 2026<a class="heading-anchor" href="#version-1-0-0-november-23-2026" aria-label="Link to this section">#</a></h2>
+<p>Initial major release of the Noelle Desktop AI Studio, transforming the project into a local-first workbench for open AI models.</p>
+<h3 id="desktop-ai-studio-architecture">Desktop AI Studio architecture<a class="heading-anchor" href="#desktop-ai-studio-architecture" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>PySide6 Native Desktop Shell</strong>: Modern desktop interface with light, dark, and system-adaptive themes. The UI process never imports heavy machine learning frameworks, ensuring responsiveness.</li>
+<li><strong>Isolated ZeroMQ worker</strong>: Dedicated worker daemon communicating over loopback IPC with session-token authentication. Features single GPU-lane queuing, VRAM pre-flight checks, LRU cache eviction, and out-of-memory containment.</li>
+<li><strong>Multi-engine execution</strong>: Native acceleration across Hugging Face Transformers (CUDA, MPS, CPU), llama.cpp (GGUF), MLX (Apple Silicon Metal), Diffusers, and Sentence-Transformers.</li>
+</ul>
+<h3 id="core-studios-features">Core studios &amp; features<a class="heading-anchor" href="#core-studios-features" aria-label="Link to this section">#</a></h3>
+<ul>
+<li><strong>Hub Discover</strong>: Model browser with instant hardware compatibility scoring (0–100 scale), modality filters, and search.</li>
+<li><strong>Model Workspace &amp; Analysis</strong>: Granular breakdown of memory fit, precision tradeoffs (FP16, INT8, NF4, AWQ, GPTQ, GGUF), context window limits, and trust controls for repositories shipping custom Python code.</li>
+<li><strong>Interactive Playgrounds</strong>: Built-in test benches for Chat, Vision Q&amp;A, Object Detection, Speech-to-Text (ASR), Speech Synthesis (TTS), Text-to-Image Diffusion, and Embeddings.</li>
+<li><strong>RAG Studio (Knowledge Canvas)</strong>: Local document ingestion (PDF, DOCX, Markdown, code), vector embeddings, and <code>sqlite-vec</code> semantic search with retrieval accuracy evaluation (hit rate, MRR, nDCG@k).</li>
+<li><strong>Mission Mode</strong>: High-level planner that converts natural language project requirements into tailored local AI hardware and model recommendations.</li>
+<li><strong>Evaluation Lab</strong>: 8 built-in benchmark datasets, deterministic local scoring, historical experiment tracking, and regression gating via <code>noelle eval</code>.</li>
+<li><strong>llama.cpp integration</strong>: Integrated GGUF quantization and inference with automated binary verification and SHA-256 integrity checks.</li>
+<li><strong>Local OpenAI API Server</strong>: Drop-in compatible <code>/v1/chat/completions</code>, <code>/v1/embeddings</code>, <code>/v1/audio/transcriptions</code>, <code>/v1/images/generations</code>, and <code>/v1/models</code> endpoints listening at <code>http://127.0.0.1:8765/v1</code>.</li>
+<li><strong>Model Context Protocol (MCP)</strong>: Native stdio MCP server (<code>noelle mcp</code>) for Claude Code, Cursor, and developer tool integration.</li>
+</ul>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="../../docs/troubleshooting/"><span>Previous</span><b>Troubleshooting</b></a></nav>
+    </article>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="../../"><img src="../../assets/noelle.png" alt="" width="24" height="24"><span>Noelle</span></a>
+          <p>Your local AI model lab — find, run, evaluate and serve open models on your own computer.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="../../#features">Features</a></li><li><a href="../../#how">How it works</a></li><li><a href="../../#privacy">Privacy</a></li><li><a href="../../#developers">Developers</a></li><li><a href="../../#download">Download</a></li><li><a href="../../#faq">FAQ</a></li></ul></div>
+        <div><h4>Documentation</h4><ul><li><a href="../../docs/">Overview</a></li><li><a href="../../docs/install/">Install</a></li><li><a href="../../docs/quickstart/">Quick start</a></li><li><a href="../../docs/mission/">Mission mode</a></li><li><a href="../../docs/models/">Models &amp; builds</a></li><li><a href="../../docs/evaluation/">Evaluation Lab</a></li><li><a href="../../docs/knowledge/">Knowledge</a></li><li><a href="../../docs/storage/">Storage</a></li></ul></div>
+        <div><h4>Developers & reference</h4><ul><li><a href="../../docs/api/">Local API</a></li><li><a href="../../docs/mcp/">MCP server</a></li><li><a href="../../docs/cli/">Command line</a></li><li><a href="../../docs/privacy/">Privacy &amp; security</a></li><li><a href="../../docs/terms/">Terms of Service</a></li><li><a href="../../docs/troubleshooting/">Troubleshooting</a></li><li><a href="../../docs/changelog/">Changelog</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> Noelle · MIT License</span>
+        <span><a href="../../docs/privacy/">Privacy Policy</a> ·
+          <a href="../../docs/terms/">Terms of Service</a> ·
+          <a href="../../docs/changelog/">Changelog</a> ·
+          <a href="../../llms.txt">llms.txt</a> ·
+          <a href="../../auth.md">auth.md</a> ·
+          <a href="../../#download" data-link="source">Source code</a> ·
+          <a href="../../sitemap.xml">sitemap.xml</a></span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
