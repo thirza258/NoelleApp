@@ -237,6 +237,9 @@ class TransformersTextEngine:
 
         spec = SpeculativeConfig.from_mapping(speculative)
         assistant = None
+        if spec.mode == "draft" and not spec.draft_model:
+            raise Unsupported("Speculative decoding needs a draft model.",
+                              hint="Choose a compatible draft model, or use prompt lookup.")
         if spec.mode == "draft" and spec.draft_model:
             draft_config = AutoConfig.from_pretrained(spec.draft_model, trust_remote_code=trust_remote_code)
             draft_tokenizer = AutoTokenizer.from_pretrained(spec.draft_model, trust_remote_code=trust_remote_code)

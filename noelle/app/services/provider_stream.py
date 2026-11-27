@@ -7,6 +7,7 @@ import threading
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from shiboken6 import isValid as _qt_is_valid
 
 from noelle.providers.provider import ProviderError
 
@@ -65,6 +66,11 @@ class ConsentGate(QObject):
         self._pending: tuple[dict[str, Any], threading.Event] | None = None
 
     def decide(self, reason: str, destination: str, timeout: float = 180.0) -> bool:
+        try:
+            if not _qt_is_valid(self):
+                return False
+        except RuntimeError:
+            return False
         event = threading.Event()
         box: dict[str, Any] = {"allowed": False}
         with self._lock:
@@ -124,16 +130,22 @@ class ProviderStream(QObject):
     def running(self) -> bool:
         return self._task is not None
 
+    def _alive(self) -> bool:
+        try:
+            return bool(_qt_is_valid(self))
+        except RuntimeError:
+            return False
+
     def _forward_token(self, task: _Task, text: str) -> None:
-        if self._task is task:
+        if self._alive() and self._task is task:
             self.token.emit(text)
 
     def _forward_finished(self, task: _Task, text: str, metrics: dict) -> None:
-        if self._task is task:
+        if self._alive() and self._task is task:
             self._task = None
             self.finished.emit(text, metrics)
 
     def _forward_failed(self, task: _Task, payload: dict) -> None:
-        if self._task is task:
+        if self._alive() and self._task is task:
             self._task = None
             self.failed.emit(payload)

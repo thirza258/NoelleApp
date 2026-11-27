@@ -25,6 +25,8 @@ def add_workflow_arguments(parser: argparse.ArgumentParser) -> None:
     run_cmd.add_argument("--output", "-o", default=None, help="save results to JSON file")
     run_cmd.add_argument("--privacy-mode", choices=["local", "hybrid", "cloud"], default=None,
                          help="override privacy mode")
+    run_cmd.add_argument("--allow-cloud", action="store_true",
+                         help="consent to sending data to configured cloud providers in this run")
 
     # test-gen command
     tg_cmd = sub.add_parser("test-gen", help="generate adversarial test suites (TTS, STT)")
@@ -79,7 +81,16 @@ def _run_workflow_cli(args: argparse.Namespace) -> int:
     if args.privacy_mode:
         graph.privacy_mode = PrivacyMode(args.privacy_mode)
 
+    if any(node.provider_id == "local" for node in graph.nodes.values()):
+        # CLI runs have no desktop runtime: spawn one for this process so a local node is
+        # not rejected with WORKER_UNAVAILABLE.
+        from noelle.providers.local_provider import LocalProvider
+        from noelle.providers.registry import register_provider
+
+        register_provider(LocalProvider(auto_spawn=True))
+
     runner = WorkflowRunner()
+    consent = bool(getattr(args, "allow_cloud", False))
 
     # Batch dataset mode
     if args.dataset:
@@ -94,7 +105,12 @@ def _run_workflow_cli(args: argparse.Namespace) -> int:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
-                    res = runner.execute(graph, initial_inputs={"in_1": item.get("text", "")})
+                    try:
+                        res = runner.execute(graph, initial_inputs={"in_1": item.get("text", "")},
+                                             consent_given=consent)
+                    except PermissionError as exc:
+                        print(f"Error: {exc}\nRe-run with --allow-cloud to consent.", file=sys.stderr)
+                        return 1
                     records.append(res.to_dict())
 
         total_cost = sum(r["total_cost_usd"] for r in records)
@@ -111,7 +127,14 @@ def _run_workflow_cli(args: argparse.Namespace) -> int:
     if args.input:
         initial_inputs["in_1"] = args.input
 
-    res = runner.execute(graph, initial_inputs=initial_inputs)
+    try:
+        res = runner.execute(graph, initial_inputs=initial_inputs, consent_given=consent)
+    except PermissionError as exc:
+        print(f"Error: {exc}\nRe-run with --allow-cloud to consent.", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 - zero-egress violations and malformed graphs
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     out_dict = res.to_dict()
 
     if args.output:

@@ -55,6 +55,9 @@ def infer_pipeline_tag(snapshot: Path) -> str | None:
     if (snapshot / "modules.json").is_file() or (snapshot / "config_sentence_transformers.json").is_file():
         return "sentence-similarity"
     config = _read_json(snapshot / "config.json")
+    if not config.get("architectures") and not config.get("model_type") and any(
+            p.suffix == ".gguf" for p in snapshot.rglob("*.gguf")):
+        return "text-generation"
     architectures = [str(a) for a in config.get("architectures") or []]
     for arch in architectures:
         if arch.endswith("ForConditionalGeneration") and any(hint in config for hint in _VISION_HINTS):
@@ -118,7 +121,21 @@ def _library(snapshot: Path) -> str:
         return "diffusers"
     if (snapshot / "modules.json").is_file():
         return "sentence-transformers"
+    if not (snapshot / "config.json").is_file() and any(p.suffix == ".gguf" for p in snapshot.rglob("*.gguf")):
+        return "gguf"
     return "transformers"
+
+
+def _gguf_file(snapshot: Path) -> str | None:
+    """One GGUF variant for a GGUF-only snapshot (prefer Q4_K_M, like the download planner)."""
+    files = sorted(p.relative_to(snapshot).as_posix() for p in snapshot.rglob("*.gguf"))
+    if not files:
+        return None
+    for marker in ("Q4_K_M", "q4_k_m", "Q4_K_S", "Q5_K_M", "Q4_0"):
+        match = next((name for name in files if marker in name), None)
+        if match:
+            return match
+    return files[0]
 
 
 def discover_cached_models(cache_dir: Path | None = None) -> list[ModelRecord]:
@@ -141,10 +158,17 @@ def discover_cached_models(cache_dir: Path | None = None) -> list[ModelRecord]:
         config = _read_json(snapshot / "config.json")
         architectures = config.get("architectures") or []
         # Flag models the bundled runtimes cannot load, before the user clicks Load.
-        verdict = runnability.assess_local(snapshot, family=tasks.task_family(tag), library=_library(snapshot))
+        library = _library(snapshot)
+        has_transformers_weights = any(p.suffix in (".safetensors", ".bin", ".pt", ".pth")
+                                       for p in snapshot.rglob("*") if p.is_file())
+        gguf_file = _gguf_file(snapshot) if not has_transformers_weights else None
+        if gguf_file:
+            library = "gguf"
+        verdict = runnability.assess_local(snapshot, family=tasks.task_family(tag), library=library)
         records.append(ModelRecord(
             repo_id=repo_id, pipeline_tag=tag, local_path=str(snapshot), commit_hash=snapshot.name,
-            library_name=_library(snapshot), architecture=str(architectures[0]) if architectures else None,
+            library_name=library, architecture=str(architectures[0]) if architectures else None,
+            engine="gguf" if gguf_file else None, gguf_file=gguf_file,
             param_count=count_safetensors_params(snapshot), license=license_from_readme(snapshot),
             size_bytes=sum(p.stat().st_size for p in snapshot.rglob("*") if p.is_file()),
             metadata={"imported_from_cache": True, "runnability": verdict.verdict,

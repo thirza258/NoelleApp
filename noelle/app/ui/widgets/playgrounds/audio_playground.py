@@ -59,6 +59,7 @@ class AudioPlayground(QWidget):
         self.output_path: str | None = None
         self._chunks: list[dict[str, Any]] = []
         self._handle: Any = None
+        self._on_done: Callable[[dict[str, Any]], None] | None = None
         self._player: Any = None
         self._audio_out: Any = None
         self.recorder = MicRecorder(self)
@@ -341,27 +342,37 @@ class AudioPlayground(QWidget):
         self.run_btn.setEnabled(False)
         self.status.setText("Working…")
         handle = self.ctx.runtime.request(cmd, payload)
-        handle.status.connect(lambda p: self.status.setText(p.get("message", "")))
-
-        def finished(result: dict[str, Any]) -> None:
-            self._handle = None
-            self.spinner.stop()
-            self.run_btn.setEnabled(True)
-            on_done(result)
-
-        def failed(error: dict[str, Any]) -> None:
-            self._handle = None
-            self.spinner.stop()
-            self.run_btn.setEnabled(True)
-            self.status.setText("Failed.")
-            self.error.set_error(str(error.get("message") or "The request failed."),
-                                 str(error["hint"]) if error.get("hint") else None)
-
-        handle.finished.connect(finished)
-        handle.failed.connect(failed)
+        handle.status.connect(self._on_status)
+        handle.finished.connect(self._on_run_finished)
+        handle.failed.connect(self._on_run_failed)
         self._handle = handle
+        self._on_done = on_done
+
+    def _on_status(self, payload: dict[str, Any]) -> None:
+        self.status.setText(str(payload.get("message") or ""))
+
+    def _on_run_finished(self, result: dict[str, Any]) -> None:
+        callback, self._on_done = self._on_done, None
+        self._handle = None
+        self.spinner.stop()
+        self.run_btn.setEnabled(True)
+        if callback is not None:
+            callback(result)
+
+    def _on_run_failed(self, error: dict[str, Any]) -> None:
+        self._on_done = None
+        self._handle = None
+        self.spinner.stop()
+        self.run_btn.setEnabled(True)
+        self.status.setText("Failed.")
+        self.error.set_error(str(error.get("message") or "The request failed."),
+                             str(error["hint"]) if error.get("hint") else None)
 
     def shutdown(self) -> None:
+        if self._handle is not None:
+            self._handle.cancel()
+            self._handle = None
+        self._on_done = None
         if self.recorder.recording:
             self.recorder.stop()
         if self._player is not None:

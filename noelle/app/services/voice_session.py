@@ -84,8 +84,10 @@ class VoiceSession(QObject):
         self._pending_audio = []
         self._speaking_done = False
         self._set_state("transcribing")
+        configured = self.ctx.settings.get("voice.language") or "auto"
+        chosen_language = language or (configured if configured not in ("auto", "system", "") else None)
         payload = {"audio_path": audio_path, "messages": messages, "system_prompt": system_prompt,
-                   "params": params or {}, "language": language or self.ctx.settings.get("voice.language") or None,
+                   "params": params or {}, "language": chosen_language,
                    "voice": voice, "speed": speed,
                    "asr": {"model_id": asr, "device": "auto", "language": language},
                    "tts": {"model_id": tts, "device": "auto", "language": language},

@@ -378,6 +378,14 @@ def _runtimes(family: str | None, quantization: str | None, formats: set[str], *
             return ("diffusers",)
         if engine == "sentence-transformers":
             return ("sentence-transformers",)
+        if engine == "kokoro":
+            return ("kokoro",)
+        if engine == "faster-whisper":
+            return ("faster-whisper",)
+        if engine == "model2vec":
+            return ("model2vec",)
+        if engine == "diffusion-single-file":
+            return ("diffusers",)
         if engine in ("transformers", "peft"):
             return ("transformers",)
     return _FAMILY_RUNTIMES.get(family, ())

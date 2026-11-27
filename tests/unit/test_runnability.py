@@ -108,6 +108,25 @@ def test_capabilities_use_the_same_verdict() -> None:
     assert cap.verdict == runnability.UNSUPPORTED_LIBRARY and not cap.supported
 
 
+def test_worker_accepts_extensionless_gguf_blobs(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Ollama stores GGUF blobs as ``sha256-<digest>`` without an extension."""
+    facts = runnability.RuntimeFacts(backends={"llama.cpp": True})
+    monkeypatch.setattr(runnability, "collect_runtime_facts", lambda: facts)
+    spec = ModelSpec(model_id="ollama--llama3--latest", task="text-generation", gguf_file="sha256-abc123",
+                     library_name=None)
+    ModelManager._check_runnability(spec, str(tmp_path))  # must not raise Unsupported
+
+
+def test_capabilities_report_the_native_engine() -> None:
+    summary = SimpleNamespace(id="hexgrad/Kokoro-82M", pipeline_tag="text-to-speech", library_name="kokoro",
+                              tags=[], siblings=[{"name": "model.safetensors"}], config={}, gated=False,
+                              card_data={}, gguf=None, base_models=[], is_adapter=False, param_count=None,
+                              weight_bytes=None, license=None)
+    cap = capabilities.analyze(summary, {}, runtime_facts=runnability.collect_runtime_facts())
+    assert cap.verdict in (runnability.RUNNABLE, runnability.NEEDS_COMPONENT)
+    assert cap.runtimes == ("kokoro",)
+
+
 def test_worker_check_raises_typed_errors() -> None:
     from noelle.runtime.errors import NeedsNewerRuntime, RemoteCodeBlocked, Unsupported
 
@@ -166,6 +185,19 @@ def test_downloader_gated_preflight_emits_one_terminal_event(monkeypatch: pytest
     assert [event.get("code") for event in events] == ["GATED"]
     assert events[0]["url"] == "https://huggingface.co/stabilityai/stable-audio-3-small-sfx"
     assert "not approved" in events[0]["message"] or "gated" in events[0]["message"].lower()
+
+
+def test_downloader_does_not_retry_http_403() -> None:
+    import httpx
+
+    from noelle.runtime import downloader
+
+    response = httpx.Response(403, request=httpx.Request("GET", "https://huggingface.co/org/model"))
+    error = httpx.HTTPStatusError("403 Client Error: Cannot access gated repo", request=response.request,
+                                  response=response)
+    assert downloader._http_status(error) == 403
+    assert downloader._is_gated_error(error) is True
+    assert downloader._is_retryable(error) is False
 
 
 def test_environment_plan_targets_the_missing_engine() -> None:

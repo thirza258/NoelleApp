@@ -217,6 +217,7 @@ def test_conversation_store_crud_search_and_prompts(tmp_path: Path) -> None:
         assert any(prompt["id"] == prompt_id for prompt in store.list_prompts())
         assert store.delete_prompt(prompt_id)
         assert not store.delete_prompt(next(p["id"] for p in store.list_prompts() if p["builtin"]))
+        assert isinstance(store.list_conversations(search='"""'), list)  # malformed FTS must not raise
         assert store.delete_conversation(conversation)
         assert store.messages(conversation) == []
         store.create_conversation(title="keep")

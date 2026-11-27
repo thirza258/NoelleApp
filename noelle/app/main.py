@@ -57,6 +57,12 @@ def build_context():  # noqa: ANN201 - returns AppContext
     i18n.set_language(settings.get("ui.language"))
     registry = get_registry()
     runtime = RuntimeClient(settings)
+    # Workflow nodes and the evaluation labs resolve providers through the global registry.
+    # Register the real worker-backed provider here so they never fall back to an unconnected one.
+    from noelle.providers.local_provider import LocalProvider
+    from noelle.providers.registry import register_provider
+
+    register_provider(LocalProvider(runtime_client=runtime))
     hardware = HardwareManager(runtime)
     downloads = DownloadManager(settings, registry)
     server = ServerManager(settings, runtime)

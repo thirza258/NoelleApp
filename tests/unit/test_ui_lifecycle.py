@@ -161,6 +161,40 @@ def test_embedding_error_renders_in_full(qtbot: Any) -> None:
     _assert_error_line_visible(page.error, page)
 
 
+def test_deleted_audio_playground_ignores_runtime_signals(qtbot: Any) -> None:
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal
+    from PySide6.QtWidgets import QApplication
+
+    from noelle.app.ui.widgets.playgrounds.audio_playground import AudioPlayground
+    from noelle.runtime import tasks
+    from noelle.runtime.protocol import Command
+
+    class Handle(QObject):
+        status = Signal(dict)
+        finished = Signal(dict)
+        failed = Signal(dict)
+        token = Signal(str)
+
+        def cancel(self) -> None:
+            pass
+
+    class Runtime:
+        def request(self, *_args: Any, **_kwargs: Any) -> Handle:
+            self.handle = Handle()
+            return self.handle
+
+    runtime = Runtime()
+    page = AudioPlayground(SimpleNamespace(toast=lambda *_a, **_k: None, runtime=runtime), lambda: {}, tasks.TTS)
+    qtbot.addWidget(page)
+    page._run(Command.SYNTHESIZE_SPEECH, {}, lambda _r: None)
+    page.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QApplication.processEvents()
+    runtime.handle.status.emit({"message": "late"})
+    runtime.handle.finished.emit({"audio_path": "/tmp/x.wav"})
+    runtime.handle.failed.emit({"message": "late error"})
+
+
 def test_camera_dialog_is_off_until_opened_and_survives_no_camera(qtbot: Any) -> None:
     from noelle.app.ui.widgets.camera_dialog import CameraDialog
 

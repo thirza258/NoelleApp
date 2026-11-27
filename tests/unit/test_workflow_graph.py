@@ -123,6 +123,50 @@ def _run_workflow_pipeline() -> None:
     assert isinstance(result.node_outputs["tts_1"]["audio"], bytes)
 
 
+def test_cli_forwards_cloud_consent(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from noelle.workflow import cli
+    from noelle.workflow.runner import WorkflowResult
+
+    graph = WorkflowGraph(privacy_mode=PrivacyMode.HYBRID)
+    graph.add_node(create_node("input", "in_1", parameters={"value": "hello"}))
+    graph.add_node(create_node("llm", "llm_1", provider_id="openai", model_id="gpt-4o"))
+    graph.connect("in_1", "output", "llm_1", "prompt")
+    manifest = tmp_path / "workflow.json"
+    manifest.write_text(graph.to_json(), encoding="utf-8")
+    calls: list[bool] = []
+
+    class FakeRunner:
+        def execute(self, _graph, initial_inputs=None, consent_given=False):  # type: ignore[no-untyped-def]
+            calls.append(consent_given)
+            return WorkflowResult(workflow_id="w", workflow_name="w", is_success=True, total_latency_ms=1.0,
+                                  total_cost_usd=0.0, total_tokens=0)
+
+    monkeypatch.setattr(cli, "WorkflowRunner", lambda: FakeRunner())
+    args = SimpleNamespace(manifest=str(manifest), dataset=None, input="hello", output=None, privacy_mode=None,
+                           allow_cloud=True)
+    assert cli._run_workflow_cli(args) == 0
+    assert calls == [True]
+
+
+def test_cli_rejects_cloud_without_consent(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from noelle.workflow import cli
+
+    graph = WorkflowGraph(privacy_mode=PrivacyMode.HYBRID)
+    graph.add_node(create_node("input", "in_1", parameters={"value": "hello"}))
+    graph.add_node(create_node("llm", "llm_1", provider_id="openai", model_id="gpt-4o"))
+    graph.connect("in_1", "output", "llm_1", "prompt")
+    manifest = tmp_path / "workflow.json"
+    manifest.write_text(graph.to_json(), encoding="utf-8")
+    args = SimpleNamespace(manifest=str(manifest), dataset=None, input="hello", output=None, privacy_mode=None,
+                           allow_cloud=False)
+    assert cli._run_workflow_cli(args) == 1
+    assert "--allow-cloud" in capsys.readouterr().err
+
+
 def test_rag_node_execution() -> None:
     graph = WorkflowGraph()
     rag_node = create_node(

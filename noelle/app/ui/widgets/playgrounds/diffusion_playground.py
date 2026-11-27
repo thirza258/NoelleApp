@@ -216,13 +216,16 @@ class DiffusionPlayground(QWidget):
         self.progress.setValue(0)
         self.status.setText("Loading pipeline…")
         handle = self.ctx.runtime.request(Command.GENERATE_IMAGE, payload)
-        handle.status.connect(lambda p: self.status.setText(p.get("message", "")))
+        handle.status.connect(self._on_status)
         handle.progress.connect(self._on_progress)
         handle.finished.connect(self._on_finished)
         handle.failed.connect(self._on_failed)
         self._handle = handle
         self.generate_btn.setText("Stop")
         theme.set_prop(self.generate_btn, "variant", "danger")
+
+    def _on_status(self, payload: dict[str, Any]) -> None:
+        self.status.setText(str(payload.get("message") or ""))
 
     def _on_progress(self, data: dict[str, Any]) -> None:
         current, total = int(data.get("current") or 0), int(data.get("total") or 1)

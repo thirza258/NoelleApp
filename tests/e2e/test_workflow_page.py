@@ -21,6 +21,10 @@ def ctx(qapp: Any) -> Any:
 
 
 def test_workflow_page_instantiation_and_templates(ctx: Any, qtbot: Any) -> None:
+    from noelle.providers.registry import get_provider
+
+    # The app must register the worker-backed provider, not an unconnected default.
+    assert getattr(get_provider("local"), "runtime_client", None) is ctx.runtime
     page = WorkflowPage(ctx)
     qtbot.addWidget(page)
     page.show()

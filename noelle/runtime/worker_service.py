@@ -916,11 +916,16 @@ class _WebToolAdapter:
 
 
 def _cmd_run_tool(worker: Worker, ctx: JobContext) -> None:
+    from noelle.config import get_settings
     from noelle.runtime import tools
 
     name = str(ctx.payload.get("name") or "")
     arguments = ctx.payload.get("arguments") if isinstance(ctx.payload.get("arguments"), dict) else {}
     collection = str(ctx.payload.get("collection") or "") or None
+    if name == "web_search" and get_settings().get("privacy.local_only", False):
+        ctx.emit(Event.RESULT, tools.ToolResult(
+            name, False, "", error="Web search is disabled in Local-only mode.").to_dict())
+        return
     result = tools.execute_tool(name, arguments, rag=_RagToolAdapter(worker, ctx),
                                 web=_WebToolAdapter(ctx.payload), collection=collection)
     ctx.emit(Event.RESULT, result.to_dict())

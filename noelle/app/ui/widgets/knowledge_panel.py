@@ -129,6 +129,12 @@ class KnowledgePanel(QWidget):
             self.ctx.downloads.job_finished.disconnect(self._on_download_finished)
         except (RuntimeError, TypeError):
             pass
+        if self._ingest is not None:
+            try:
+                self._ingest.cancel()
+            except Exception:  # noqa: BLE001 - cancellation is best effort
+                pass
+            self._ingest = None
 
     # ------------------------------------------------------------------ data
     def on_activated(self) -> None:
@@ -224,7 +230,7 @@ class KnowledgePanel(QWidget):
                                 "touched.") != QMessageBox.StandardButton.Yes:
             return
         handle = self.ctx.runtime.request(Command.RAG_DELETE_COLLECTION, {"collection": name})
-        handle.finished.connect(lambda _p: (self.refresh(), self.collections_changed.emit()))
+        handle.finished.connect(self._on_collection_deleted)
 
     def _pick_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Add documents", "", FILE_FILTER)
@@ -267,10 +273,21 @@ class KnowledgePanel(QWidget):
         handle = self.ctx.runtime.request(Command.RAG_INGEST, {"collection": name, "files": files,
                                                                "embedding_model": model})
         handle.progress.connect(self._on_progress)
-        handle.status.connect(lambda p: self.progress_text.setText(p.get("message", "")))
+        handle.status.connect(self._on_ingest_status)
         handle.finished.connect(self._on_ingested)
         handle.failed.connect(self._on_ingest_failed)
         self._ingest = handle
+
+    def _on_collection_deleted(self, _payload: dict[str, Any]) -> None:
+        self.refresh()
+        self.collections_changed.emit()
+
+    def _on_ingest_status(self, payload: dict[str, Any]) -> None:
+        self.progress_text.setText(str(payload.get("message") or ""))
+
+    def _on_query_failed(self, payload: dict[str, Any]) -> None:
+        self.results.clear()
+        self.results.addItem(str(payload.get("message") or "Failed"))
 
     def _on_progress(self, data: dict[str, Any]) -> None:
         total = data.get("total") or 0
@@ -313,7 +330,7 @@ class KnowledgePanel(QWidget):
         handle = self.ctx.runtime.request(Command.RAG_QUERY, {"collection": name, "query": text,
                                                               "top_k": int(self.ctx.settings.get("rag.top_k", 4))})
         handle.finished.connect(self._show_results)
-        handle.failed.connect(lambda p: (self.results.clear(), self.results.addItem(p.get("message", "Failed"))))
+        handle.failed.connect(self._on_query_failed)
 
     def _show_results(self, payload: dict[str, Any]) -> None:
         self.results.clear()

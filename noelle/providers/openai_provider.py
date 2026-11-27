@@ -14,6 +14,7 @@ import base64
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Any, Iterator
 
 import httpx
@@ -242,7 +243,7 @@ class OpenAIProvider(AIProvider, AsyncProviderMixin):
         if not audio_content and req.audio_path:
             with open(req.audio_path, "rb") as f:
                 audio_content = f.read()
-            filename = req.audio_path.split("/")[-1]
+            filename = Path(req.audio_path).name
 
         if not audio_content:
             return NodeResponse(

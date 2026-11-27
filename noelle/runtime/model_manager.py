@@ -436,14 +436,18 @@ class ModelManager:
         """Refuse a checkpoint Noelle has no engine for, before importing any heavy library."""
         root = Path(source)
         if spec.gguf_file:
+            # Ollama stores GGUF blobs without an extension; the extension is not what makes
+            # a file a GGUF checkpoint, the explicit gguf_file selection is.
             files = [spec.gguf_file]
             config: dict[str, Any] = {}
+            library = "gguf"  # an explicitly selected GGUF file always goes through llama.cpp
         else:
             files = runnability.file_names(root)
             config = _read_config(root)
+            library = spec.library_name
         verdict = runnability.assess(
             family=spec.family,
-            library=spec.library_name,
+            library=library,
             files=files,
             config=config,
             gated=spec.gated,

@@ -138,8 +138,10 @@ def _repo(cache: Path, repo: str, files: dict[str, Any]) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         if name.endswith(".safetensors"):
             _safetensors(target, content)
+        elif isinstance(content, bytes):
+            target.write_bytes(content)
         else:
-            target.write_text(json.dumps(content) if isinstance(content, (dict, list)) else content)
+            target.write_text(json.dumps(content) if isinstance(content, (dict, list)) else str(content))
     return snap
 
 
@@ -157,14 +159,17 @@ def test_import_cached_models_offline(tmp_path: Path) -> None:
                                     "model.safetensors": {"w": [1]}})
     _repo(cache, "org/lora", {"adapter_config.json": {}, "config.json": {"architectures": ["LlamaForCausalLM"]},
                               "adapter_model.safetensors": {"w": [1]}})
+    _repo(cache, "org/gguf", {"model-Q4_K_M.gguf": b"GGUF"})
     found = {r.repo_id: r for r in discover_cached_models(cache)}
-    assert set(found) == {"org/llm", "org/embed", "org/sd"}
+    assert set(found) == {"org/llm", "org/embed", "org/sd", "org/gguf"}
+    assert found["org/gguf"].pipeline_tag == "text-generation"
+    assert found["org/gguf"].library_name == "gguf" and found["org/gguf"].gguf_file == "model-Q4_K_M.gguf"
     assert found["org/llm"].pipeline_tag == "text-generation" and found["org/llm"].license == "apache-2.0"
     assert found["org/llm"].param_count == 40
     assert found["org/embed"].pipeline_tag == "sentence-similarity"
     assert found["org/sd"].pipeline_tag == "text-to-image" and found["org/sd"].library_name == "diffusers"
     registry = ModelRegistry(tmp_path / "r.db")
-    assert sorted(import_cached_models(registry, cache)) == ["org/embed", "org/llm", "org/sd"]
+    assert sorted(import_cached_models(registry, cache)) == ["org/embed", "org/gguf", "org/llm", "org/sd"]
     assert import_cached_models(registry, cache) == []  # idempotent
 
 

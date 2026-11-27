@@ -58,10 +58,6 @@ def compatibility(target_config: Mapping[str, Any], draft_config: Mapping[str, A
     draft_eos = draft_config.get("eos_token_id")
     if target_eos is not None and draft_eos is not None and target_eos != draft_eos:
         return False, "EOS token ids differ."
-    target_device = str(target_config.get("torch_dtype") or "")
-    draft_device = str(draft_config.get("torch_dtype") or "")
-    if target_device and draft_device and target_device != draft_device:
-        return False, f"Dtype differs ({target_device} vs {draft_device})."
     if not target_vocab and not draft_vocab and target_tokenizer is None:
         return False, "Not enough metadata to verify tokenizer compatibility."
     return True, ""

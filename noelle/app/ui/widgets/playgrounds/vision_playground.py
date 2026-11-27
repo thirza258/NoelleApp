@@ -253,10 +253,13 @@ class VisionPlayground(QWidget):
         else:
             payload["top_k"] = 5
             handle = self.ctx.runtime.request(Command.CLASSIFY_IMAGE, payload)
-        handle.status.connect(lambda p: self.status.setText(p.get("message", "")))
+        handle.status.connect(self._on_status)
         handle.finished.connect(self._on_finished)
         handle.failed.connect(self._on_failed)
         self._handle = handle
+
+    def _on_status(self, payload: dict[str, Any]) -> None:
+        self.status.setText(str(payload.get("message") or ""))
 
     def _on_token(self, text: str) -> None:
         self._text += text

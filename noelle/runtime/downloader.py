@@ -172,6 +172,21 @@ def _reporter(file_name: str, totals: dict[str, int]) -> type:
     return Reporter
 
 
+def _http_status(exc: BaseException) -> int | None:
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return int(status) if isinstance(status, int) else None
+
+
+def _is_gated_error(exc: BaseException) -> bool:
+    from huggingface_hub.errors import GatedRepoError
+
+    if isinstance(exc, GatedRepoError):
+        return True
+    # Some Hub endpoints return a plain 403 for a gated file instead of GatedRepoError.
+    return _http_status(exc) == 403 and "gated" in str(exc).lower()
+
+
 def _is_retryable(exc: BaseException) -> bool:
     from huggingface_hub.errors import (
         EntryNotFoundError,
@@ -181,6 +196,8 @@ def _is_retryable(exc: BaseException) -> bool:
     )
 
     if isinstance(exc, (RepositoryNotFoundError, RevisionNotFoundError, EntryNotFoundError, GatedRepoError)):
+        return False
+    if _http_status(exc) in (401, 403, 404):  # authorization or missing content never heals by retrying
         return False
     if isinstance(exc, (PermissionError, FileNotFoundError)):
         return False
@@ -299,8 +316,12 @@ def run(args: argparse.Namespace) -> int:
         except RepositoryNotFoundError:
             emit({"type": "error", "code": "NOT_FOUND", "message": f"Repository {args.repo_id} was not found."})
             return 1
-        except Exception as exc:  # network
-            emit({"type": "error", "code": "NETWORK", "message": f"Could not verify access to the Hub: {exc}"})
+        except Exception as exc:  # network or a plain 403 for a gated repository
+            if _is_gated_error(exc) or _http_status(exc) == 403:
+                _emit_gated(args.repo_id, token)
+            else:
+                emit({"type": "error", "code": "NETWORK",
+                      "message": f"Could not verify access to the Hub: {exc}"})
             return 1
 
     commit = info.sha
@@ -357,7 +378,7 @@ def run(args: argparse.Namespace) -> int:
                 future.result()
             except Exception as exc:  # noqa: BLE001
                 failures.append(entry.name)
-                if isinstance(exc, GatedRepoError):
+                if _is_gated_error(exc):
                     gated_failure = True
                 emit({"type": "file_error", "file": entry.name, "message": str(exc)[:500]})
     if failures:

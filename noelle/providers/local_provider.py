@@ -286,9 +286,21 @@ class LocalProvider(AIProvider, AsyncProviderMixin):
                 telemetry = self._telemetry(start, request, "")
                 telemetry.audio_duration_s = float(result.get("duration_s") or 0.0)
             elif modality == Modality.VISION.value:
-                if not request.image_path:
+                path = request.image_path
+                temporary = None
+                if not path and request.image_bytes:
+                    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    handle.write(request.image_bytes)
+                    handle.close()
+                    temporary = handle.name
+                    path = temporary
+                if not path:
                     raise ProviderError("MISSING_IMAGE", "No image was provided.", category="request")
-                output = self.vision(request.image_path, request.prompt, model=model)
+                try:
+                    output = self.vision(path, request.prompt, model=model)
+                finally:
+                    if temporary:
+                        Path(temporary).unlink(missing_ok=True)
                 telemetry = self._telemetry(start, request, str(output))
             else:
                 raise ProviderError("UNSUPPORTED_TASK", f"Unsupported local modality: {modality}",

@@ -128,11 +128,23 @@ class ConversationStore:
                 where = "WHERE c.id IN (SELECT conversation_id FROM messages WHERE content LIKE ?)"
                 params.append(f"%{search.strip()}%")
         params.append(limit)
+        sql = (f"""SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+                   FROM conversations c {where}
+                   ORDER BY c.pinned DESC, c.updated_at DESC LIMIT ?""")
         with self._lock:
-            rows = self._conn.execute(
-                f"""SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
-                    FROM conversations c {where}
-                    ORDER BY c.pinned DESC, c.updated_at DESC LIMIT ?""", params).fetchall()
+            try:
+                rows = self._conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                # FTS query syntax varies with arbitrary user input; fall back to LIKE instead
+                # of failing the sidebar.
+                if not (search and search.strip()):
+                    raise
+                like = f"%{search.strip()}%"
+                rows = self._conn.execute(
+                    """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+                       FROM conversations c
+                       WHERE c.id IN (SELECT conversation_id FROM messages WHERE content LIKE ?)
+                       ORDER BY c.pinned DESC, c.updated_at DESC LIMIT ?""", (like, limit)).fetchall()
         return [_conversation(row) for row in rows]
 
     def get_conversation(self, conversation_id: int) -> dict[str, Any] | None:

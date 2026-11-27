@@ -101,6 +101,10 @@ def test_local_provider_uses_the_worker(monkeypatch: pytest.MonkeyPatch, tmp_pat
     tts_res = provider.execute(NodeRequest(modality=Modality.TTS, model="org/tts", prompt="Suara lokal Noelle"))
     assert tts_res.is_success and tts_res.output == b"RIFF-local-audio"
 
+    vision_res = provider.execute(NodeRequest(modality=Modality.VISION, model="org/vlm",
+                                              image_bytes=b"\x89PNG\r\n\x1a\nfake"))
+    assert vision_res.is_success and vision_res.output == "a local vision answer"
+
     assert provider.health()["reachable"] is True
     assert any(cmd == "GENERATE_STREAM" for cmd, _payload in fake.calls)
 

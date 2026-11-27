@@ -111,6 +111,24 @@ def test_consent_gate_bridges_worker_decision() -> None:
     assert gate.decide("no VRAM", "OpenAI") is True
 
 
+def test_cloud_provider_never_sends_the_other_catalogue_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from noelle.providers import hybrid as hybrid_module
+
+    class FakeOpenAI:
+        def __init__(self) -> None:
+            self.models: list[str | None] = []
+
+        def chat(self, messages: list[dict[str, Any]], *, model: str | None = None, **kwargs: Any) -> str:
+            self.models.append(model)
+            return "ok"
+
+    monkeypatch.setattr(hybrid_module, "has_api_key", lambda provider: provider == "openai")
+    fake = FakeOpenAI()
+    cloud = CloudProvider(openai=fake)
+    assert cloud.chat([{"role": "user", "content": "hi"}], model="anthropic/claude-3.5-sonnet") == "ok"
+    assert fake.models == ["gpt-4o-mini"]
+
+
 def test_cloud_provider_requires_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
     from noelle.providers import hybrid as hybrid_module
 
@@ -211,6 +229,59 @@ def test_i18n_catalogs_and_fallback() -> None:
 
 
 # --------------------------------------------------------------- native engines
+def test_voice_session_turns_auto_language_into_none(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtCore import QObject, Signal
+
+    from noelle.app.services.voice_session import VoiceSession
+
+    class Handle(QObject):
+        event = Signal(str, dict)
+        token = Signal(str)
+        finished = Signal(dict)
+        failed = Signal(dict)
+
+        def cancel(self) -> None:
+            pass
+
+    captured: dict[str, Any] = {}
+
+    class Runtime:
+        def request(self, cmd, payload):  # type: ignore[no-untyped-def]
+            captured.update(payload)
+            return Handle()
+
+    class Record:
+        repo_id = "org/asr"
+        pipeline_tag = "automatic-speech-recognition"
+        local_path = str(tmp_path)
+        precision = "auto"
+        source = "hub"
+
+        @staticmethod
+        def exists_on_disk() -> bool:
+            return True
+
+    class Registry:
+        @staticmethod
+        def list_models(family=None):  # type: ignore[no-untyped-def]
+            return [Record()]
+
+    class Settings(dict):
+        def get(self, key, default=None):  # type: ignore[no-untyped-def]
+            if key == "voice.language":
+                return "auto"
+            return super().get(key, default)
+
+    ctx = SimpleNamespace(settings=Settings(), registry=Registry(), runtime=Runtime(),
+                          toast=lambda *_a, **_k: None)
+    session = VoiceSession(ctx)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"RIFF")
+    assert session.start_turn(str(audio), [{"role": "user", "content": "hi"}], llm_payload={"model_id": "org/llm"})
+    assert captured["language"] is None
+    assert captured["asr"]["language"] is None and captured["tts"]["language"] is None
+
+
 def test_voice_worker_turn_emits_transcript_tokens_and_audio(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import threading
 
@@ -289,6 +360,25 @@ def test_worker_run_tool_executes_calculator() -> None:
 
     worker_service._cmd_run_tool(Worker(), Ctx())  # type: ignore[arg-type]
     assert sent and sent[0][0] == Event.RESULT and sent[0][1]["summary"] == "42"
+
+
+def test_web_tool_is_rejected_in_local_only_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    from noelle.runtime import worker_service
+    from noelle.runtime.protocol import Event
+
+    monkeypatch.setattr("noelle.config.get_settings", lambda: {"privacy.local_only": True})
+    sent: list[tuple[str, dict]] = []
+
+    class Ctx:
+        payload = {"name": "web_search", "arguments": {"query": "latest news"}}
+
+        @staticmethod
+        def emit(event: str, payload: dict[str, Any]) -> None:
+            sent.append((str(event), payload))
+
+    worker_service._cmd_run_tool(object(), Ctx())  # type: ignore[arg-type]
+    assert sent[0][0] == Event.RESULT
+    assert sent[0][1]["ok"] is False and "Local-only" in sent[0][1]["error"]
 
 
 def test_native_engine_registry_does_not_import_modules() -> None:

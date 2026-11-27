@@ -35,6 +35,8 @@ class OptimizePanel(QScrollArea):
         self.ctx = ctx
         self.page = page
         self._quant: Any = None
+        self._quant_method: str | None = None
+        self._lora_handle: Any = None
         self.setWidgetResizable(True)
         host = QWidget()
         self.setWidget(host)
@@ -118,7 +120,7 @@ class OptimizePanel(QScrollArea):
             self.notice.hide()
         handle = self.ctx.runtime.request(Command.QUANTIZE_CAPABILITIES)
         handle.finished.connect(self._render_methods)
-        handle.failed.connect(lambda p: self.methods_status.setText(p.get("message", "")))
+        handle.failed.connect(self._on_methods_failed)
         self.lora_host.setVisible(summary.family == tasks.TEXT)
         self._refresh_adapters()
 
@@ -181,10 +183,11 @@ class OptimizePanel(QScrollArea):
         self.progress_text.setText("Starting…")
         handle = self.ctx.runtime.request(Command.QUANTIZE, payload)
         handle.progress.connect(self._on_progress)
-        handle.status.connect(lambda p: self.progress_text.setText(p.get("message", "")))
-        handle.finished.connect(lambda result: self._on_quantized(method, result))
+        handle.status.connect(self._on_quant_status)
+        handle.finished.connect(self._on_quantized_result)
         handle.failed.connect(self._on_failed)
         self._quant = handle
+        self._quant_method = method
         self.on_activated()
 
     def _on_progress(self, data: dict[str, Any]) -> None:
@@ -192,6 +195,19 @@ class OptimizePanel(QScrollArea):
             self.progress.setRange(0, int(data["total"]))
             self.progress.setValue(int(data.get("current") or 0))
         self.progress_text.setText(f"{data.get('stage', '')}: {data.get('message', '')}".strip(": "))
+
+    def _on_methods_failed(self, payload: dict[str, Any]) -> None:
+        self.methods_status.setText(str(payload.get("message") or "Could not read quantization support."))
+
+    def _on_quant_status(self, payload: dict[str, Any]) -> None:
+        self.progress_text.setText(str(payload.get("message") or ""))
+
+    def _on_quantized_result(self, result: dict[str, Any]) -> None:
+        self._on_quantized(self._quant_method or "auto", result)
+        self._quant_method = None
+
+    def _on_lora_status(self, payload: dict[str, Any]) -> None:
+        self.lora_status.setText(str(payload.get("message") or ""))
 
     def _on_quantized(self, method: str, result: dict[str, Any]) -> None:
         self._quant = None
@@ -238,11 +254,19 @@ class OptimizePanel(QScrollArea):
         self._refresh_adapters()
 
     def shutdown(self) -> None:
-        """Explicitly detach from the application-level download signal before deletion."""
+        """Detach signals and cancel in-flight work before model-tab teardown."""
         try:
             self.ctx.downloads.job_finished.disconnect(self._on_download_finished)
         except (RuntimeError, TypeError):
             pass
+        for handle in (self._quant, self._lora_handle):
+            if handle is not None:
+                try:
+                    handle.cancel()
+                except Exception:  # noqa: BLE001 - cancellation is best effort
+                    pass
+        self._quant = None
+        self._lora_handle = None
 
     def _refresh_adapters(self) -> None:
         if not widget_alive(self):
@@ -295,9 +319,10 @@ class OptimizePanel(QScrollArea):
         self.lora_spinner.start()
         payload = {**self.page.worker_payload(), "adapter_id": adapter_id, "adapter_local_path": local_path}
         handle = self.ctx.runtime.request(Command.LORA_LOAD, payload)
-        handle.status.connect(lambda p: self.lora_status.setText(p.get("message", "")))
+        handle.status.connect(self._on_lora_status)
         handle.finished.connect(self._on_attached)
         handle.failed.connect(self._on_lora_failed)
+        self._lora_handle = handle
 
     def _on_attached(self, result: dict[str, Any]) -> None:
         self.lora_spinner.stop()
@@ -316,6 +341,7 @@ class OptimizePanel(QScrollArea):
                                                                      "adapter_name": name})
         handle.finished.connect(self._on_switched)
         handle.failed.connect(self._on_lora_failed)
+        self._lora_handle = handle
 
     def _on_switched(self, result: dict[str, Any]) -> None:
         self.lora_spinner.stop()

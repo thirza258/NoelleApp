@@ -129,8 +129,12 @@ class TextPlayground(QWidget):
         self._last_sources: list[dict[str, Any]] = []
         self._stream: ProviderStream | None = None
         self._tool_rounds = 0
+        self._tool_running = False
         self._pending_tools = False
         self._voice_view: MessageView | None = None
+        self._silence_frames = 0
+        self._heard_sound = False
+        self._voice_started = 0.0
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root = QHBoxLayout(self)
@@ -295,6 +299,7 @@ class TextPlayground(QWidget):
 
         self.recorder = MicRecorder(self)
         self.recorder.error.connect(lambda message: self.ctx.toast(message, "error"))
+        self.recorder.level.connect(self._on_mic_level)
         self.consent_gate = ConsentGate(self)
         self.consent_gate.requested.connect(self._ask_cloud_consent)
         self.voice = VoiceSession(ctx, self)
@@ -365,6 +370,10 @@ class TextPlayground(QWidget):
     def _load_conversation(self, conversation_id: int) -> None:
         if self._stream is not None:
             self._stream.cancel()
+        if self.voice.state != "idle":
+            self.voice.stop()
+        self._voice_view = None
+        self._tool_running = False
         self._current = None
         try:
             data = self._conversations().get_conversation(conversation_id)
@@ -376,8 +385,7 @@ class TextPlayground(QWidget):
         self.history.clear()
         self.canvas.clear()
         self.sources.set_sources([])
-        if data.get("system_prompt"):
-            self.system_prompt.setPlainText(data["system_prompt"])
+        self.system_prompt.setPlainText(str(data.get("system_prompt") or ""))
         for message in data.get("messages") or []:
             role = message.get("role")
             if role not in ("user", "assistant") or not message.get("content"):
@@ -460,6 +468,13 @@ class TextPlayground(QWidget):
     def new_chat(self) -> None:
         if self._stream is not None:
             self._stream.cancel()
+        if self.recorder.recording:
+            self.recorder.stop()
+            self.voice_btn.setChecked(False)
+        if self.voice.state != "idle":
+            self.voice.stop()
+            self.voice_btn.setChecked(False)
+        self._voice_view = None
         self.history.clear()
         self.canvas.clear()
         self.sources.set_sources([])
@@ -467,6 +482,7 @@ class TextPlayground(QWidget):
         self._restored = True
         self._last_sources = []
         self._tool_rounds = 0
+        self._tool_running = False
         self.conv_list.blockSignals(True)
         self.conv_list.clearSelection()
         self.conv_list.blockSignals(False)
@@ -479,6 +495,10 @@ class TextPlayground(QWidget):
             self.send()
 
     def _toggle_voice(self) -> None:
+        if self._tool_running:
+            self.voice_btn.setChecked(False)
+            self.ctx.toast("Wait for the running tool to finish.", "info")
+            return
         if self.voice.state not in ("idle", "recording"):
             self.voice.stop()
             self.voice_btn.setChecked(False)
@@ -499,6 +519,9 @@ class TextPlayground(QWidget):
                 self.voice_btn.setChecked(False)
                 self.ctx.toast("Microphone access is blocked. Allow it in the system privacy settings.", "error")
                 return
+            self._silence_frames = 0
+            self._heard_sound = False
+            self._voice_started = time.monotonic()
             self.recorder.start()
             if self.recorder.recording:
                 self.voice_btn.setChecked(True)
@@ -508,6 +531,21 @@ class TextPlayground(QWidget):
                 self.voice_btn.setChecked(False)
 
         request_microphone(granted)
+
+    def _on_mic_level(self, level: float) -> None:
+        if not self.recorder.recording or not self.ctx.settings.get("voice.auto_send_on_silence", False):
+            return
+        if level >= 0.02:
+            self._heard_sound = True
+            self._silence_frames = 0
+            return
+        if not self._heard_sound or time.monotonic() - self._voice_started < 1.0:
+            return
+        self._silence_frames += 1
+        # The recorder emits several buffers per second; ~12 quiet buffers is roughly a second.
+        if self._silence_frames >= 12:
+            self._silence_frames = 0
+            self._toggle_voice()
 
     def _stream_messages_voice(self, audio_path: str) -> None:
         self.voice_status.setText(tr("voice.transcribing"))
@@ -542,6 +580,7 @@ class TextPlayground(QWidget):
                         system_prompt=self.system_prompt.toPlainText().strip() or None,
                         params=self.params.values())
                 store.add_message(self._conversation_id, "user", text, audio_path=None)
+                self._refresh_conversations()
             except Exception:  # noqa: BLE001
                 pass
         self._voice_view = self.canvas.add_message("assistant", "", self.display_name())
@@ -578,6 +617,9 @@ class TextPlayground(QWidget):
         if self.voice.state not in ("idle",):
             self.ctx.toast("Stop the voice turn before typing.", "info")
             return
+        if self._tool_running:
+            self.ctx.toast("Wait for the running tool to finish.", "info")
+            return
         if self._stream is not None and self._stream.running:
             return
         text = self.composer.toPlainText().strip()
@@ -607,7 +649,7 @@ class TextPlayground(QWidget):
             names += ["calculator", "current_datetime"]
         if self.use_docs.isChecked() and self.collection.currentData():
             names.append("knowledge_search")
-        if self.use_web.isChecked():
+        if self.use_web.isChecked() and not self.ctx.settings.get("privacy.local_only", False):
             names.append("web_search")
         return names
 
@@ -638,8 +680,8 @@ class TextPlayground(QWidget):
         if mode != "off":
             options["speculative"] = {"mode": mode, "draft_model": self.draft_model.currentData(),
                                       "draft_tokens": 10}
-            self.ctx.settings.update({"generation.speculative.mode": mode,
-                                      "generation.speculative.draft_model": self.draft_model.currentData()})
+        self.ctx.settings.update({"generation.speculative.mode": mode,
+                                  "generation.speculative.draft_model": self.draft_model.currentData()})
         if self._stream is None:
             self._stream = ProviderStream(self)
             self._stream.token.connect(self._on_token)
@@ -659,6 +701,9 @@ class TextPlayground(QWidget):
 
     def _on_finished(self, text: str, metrics: dict[str, Any]) -> None:
         view = self._current
+        if view is None:  # the conversation changed while this request was running
+            self._done()
+            return
         if view is not None:
             view.set_busy(False)
             view.set_text(text)
@@ -697,7 +742,12 @@ class TextPlayground(QWidget):
             self.canvas.add_message("assistant", f"🔧 Tool call could not be used: {exc}")
             self._done()
             return
+        if call.name not in self._enabled_tools():
+            self.canvas.add_message("assistant", f"🔧 Tool **{call.name}** is not enabled for this chat.")
+            self._done()
+            return
         self._tool_rounds += 1
+        self._tool_running = True
         card = self.canvas.add_message("assistant", f"🔧 Calling **{call.name}**…")
         self._persist("tool", f"tool_call {call.name} {json.dumps(call.arguments)}")
         provider = self._stream.provider if self._stream is not None else None
@@ -714,16 +764,28 @@ class TextPlayground(QWidget):
         from noelle.app.services.task_runner import runner
 
         def done(result: Any) -> None:
+            self._tool_running = False
+            if self._current is None:  # another conversation was opened while the tool ran
+                return
             data = result if isinstance(result, dict) else {"summary": str(result), "ok": True}
             summary = str(data.get("summary") or data.get("data") or "done")
             ok = data.get("ok", True)
             card.set_text(f"🔧 **{call.name}** {self._tool_arguments(arguments)}\n\n"
                           f"{'✓' if ok else '✗'} {summary}")
+            payload_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            hits = payload_data.get("hits") if isinstance(payload_data, dict) else None
+            if call.name == "knowledge_search" and hits:
+                self._last_sources = hits
+                self.sources.set_sources(hits)
+                card.set_sources(hits)
             self.history.append({"role": "user", "content": f"Tool result ({call.name}): {summary}"})
             self._persist("tool", f"tool_result {call.name}: {summary}")
             self._stream_messages()
 
         def failed(message: str) -> None:
+            self._tool_running = False
+            if self._current is None:
+                return
             card.set_text(f"🔧 **{call.name}** failed: {message}")
             self.history.append({"role": "user", "content": f"Tool error ({call.name}): {message}"})
             self._stream_messages()
@@ -736,6 +798,9 @@ class TextPlayground(QWidget):
 
     def _on_failed(self, payload: dict[str, Any]) -> None:
         view = self._current
+        if view is None:  # a request from a conversation that is no longer open
+            self._done()
+            return
         code = payload.get("code")
         if code == "CANCELLED" and view is not None:
             view.set_busy(False)

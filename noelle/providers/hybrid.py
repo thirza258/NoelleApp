@@ -19,8 +19,9 @@ from noelle.providers.provider import AsyncProviderMixin, ProviderCapabilities, 
 log = logging.getLogger("noelle.providers.hybrid")
 
 FALLBACK_CODES = frozenset({"MODEL_NOT_FOUND", "DEPENDENCY_MISSING", "UNSUPPORTED", "UNSUPPORTED_LIBRARY",
-                            "NEEDS_NEWER_RUNTIME", "REMOTE_CODE_BLOCKED", "OOM", "WORKER_CRASHED",
-                            "WORKER_NOT_READY", "WORKER_UNAVAILABLE", "TIMEOUT", "MODEL_REQUIRED"})
+                            "NEEDS_NEWER_RUNTIME", "REMOTE_CODE_BLOCKED", "LOAD_FAILED", "INTERNAL", "OOM",
+                            "WORKER_CRASHED", "WORKER_NOT_READY", "WORKER_UNAVAILABLE", "TIMEOUT",
+                            "MODEL_REQUIRED"})
 
 DEFAULT_POLICY: dict[str, str] = {
     "chat": "local", "vision": "local", "embedding": "local", "tts": "local", "stt": "local",
@@ -60,14 +61,23 @@ class CloudProvider(AsyncProviderMixin):
         raise ProviderError("NO_CLOUD_PROVIDER", "No cloud API key is configured.", category="auth",
                             recoverable=False, suggested_actions=("configure_api_key",))
 
+    def _effective_model(self, provider: Any, model: str | None) -> str:
+        """A provider must never receive a model id from the other provider's catalogue."""
+        model_id = model or self.default_model
+        if provider is self.openai and not _openai_model(model_id):
+            return "gpt-4o-mini"
+        if provider is self.openrouter and _openai_model(model_id):
+            return self.default_model if not _openai_model(self.default_model) else "deepseek/deepseek-chat"
+        return model_id
+
     def chat(self, messages: list[dict[str, Any]], *, model: str | None = None, **params: Any) -> str:
         provider = self._pick(model or self.default_model)
-        return provider.chat(messages, model=model or self.default_model, **params)
+        return provider.chat(messages, model=self._effective_model(provider, model), **params)
 
     def stream_chat(self, messages: list[dict[str, Any]], *, model: str | None = None,
                     **params: Any) -> Iterator[str]:
         provider = self._pick(model or self.default_model)
-        yield from provider.stream_chat(messages, model=model or self.default_model, **params)
+        yield from provider.stream_chat(messages, model=self._effective_model(provider, model), **params)
 
     def embed(self, texts: list[str], *, model: str | None = None, **params: Any) -> list[list[float]]:
         return self._pick(model, modality="embedding").embed(texts, model=model, **params)
@@ -86,7 +96,8 @@ class CloudProvider(AsyncProviderMixin):
 
     def vision(self, image_path: str, prompt: str = "", *, model: str | None = None,
                **params: Any) -> str:
-        return self._pick(model).vision(image_path, prompt, model=model, **params)
+        provider = self._pick(model)
+        return provider.vision(image_path, prompt, model=self._effective_model(provider, model), **params)
 
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         from noelle.runtime.tools import execute_tool

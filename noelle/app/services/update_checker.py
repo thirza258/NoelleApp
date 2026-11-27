@@ -90,7 +90,11 @@ def check_models(records: Iterable[Any], *, api: Any = None, limit: int = 200) -
 
         api = HfApi()
     updates: list[ModelUpdate] = []
+    seen: set[str] = set()
     for record in list(records)[:limit]:
+        if getattr(record, "repo_id", None) in seen:
+            continue
+        seen.add(getattr(record, "repo_id", ""))
         if getattr(record, "source", "hub") != "hub" or not getattr(record, "commit_hash", None):
             continue
         try:

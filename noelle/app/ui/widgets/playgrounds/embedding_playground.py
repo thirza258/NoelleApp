@@ -80,9 +80,12 @@ class EmbeddingPlayground(QWidget):
         self.spinner.start()
         self.run_btn.setEnabled(False)
         handle = self.ctx.runtime.request(Command.EMBED, {**self.payload(), "inputs": [query, *docs]})
-        handle.status.connect(lambda p: self.status.setText(p.get("message", "")))
+        handle.status.connect(self._on_status)
         handle.finished.connect(lambda result: self._show(docs, result))
         handle.failed.connect(self._failed)
+
+    def _on_status(self, payload: dict[str, Any]) -> None:
+        self.status.setText(str(payload.get("message") or ""))
 
     def _show(self, docs: list[str], result: dict[str, Any]) -> None:
         self.spinner.stop()
