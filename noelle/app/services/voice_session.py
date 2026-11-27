@@ -171,6 +171,10 @@ class VoiceSession(QObject):
             elif self._speaking_done and self.state == "speaking":
                 self._set_state("idle")
 
+    @property
+    def partial_text(self) -> str:
+        return self._text
+
     def stop(self) -> None:
         if self._handle is not None:
             self._handle.cancel()

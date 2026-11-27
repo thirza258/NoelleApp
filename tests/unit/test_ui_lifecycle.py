@@ -161,6 +161,43 @@ def test_embedding_error_renders_in_full(qtbot: Any) -> None:
     _assert_error_line_visible(page.error, page)
 
 
+def test_cancelling_a_stream_re_enables_the_send_button(qtbot: Any) -> None:
+    from noelle.app.ui.widgets.playgrounds.text_playground import TextPlayground
+
+    class Settings(dict):
+        def get(self, key: str, default: Any = None) -> Any:
+            return super().get(key, default)
+
+        def update(self, values: dict[str, Any]) -> None:
+            super().update(values)
+
+    settings = Settings({"generation.system_prompt": "", "generation.temperature": 0.7, "generation.top_p": 0.9,
+                         "generation.top_k": 50, "generation.repetition_penalty": 1.1,
+                         "generation.max_new_tokens": 512, "generation.speculative.mode": "off",
+                         "rag.top_k": 4, "chats.save": False})
+    ctx = SimpleNamespace(settings=settings, registry=SimpleNamespace(list_models=lambda **_: []),
+                          toast=lambda *_a, **_k: None, runtime=SimpleNamespace())
+    page = TextPlayground(ctx, lambda: {"model_id": "org/model", "task": "text-generation"}, lambda: "Model")
+    qtbot.addWidget(page)
+    view = page.canvas.add_message("assistant", "partial answer")
+    page._current = view
+
+    class FakeStream:
+        running = True
+        provider = SimpleNamespace(last_route="local")
+
+        def cancel(self) -> None:
+            self.running = False
+
+    page._stream = FakeStream()
+    page.send_btn.setText("Stop")
+    page.send_btn.setEnabled(False)
+    page._send_or_stop()
+    assert page.send_btn.isEnabled() and page.send_btn.text() == "Send"
+    assert page.history[-1] == {"role": "assistant", "content": "partial answer"}
+    assert page._current is None
+
+
 def test_deleted_audio_playground_ignores_runtime_signals(qtbot: Any) -> None:
     from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal
     from PySide6.QtWidgets import QApplication

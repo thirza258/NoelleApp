@@ -5,6 +5,6 @@ shell is not allowed to pull in torch, transformers or diffusers. Heavy imports
 belong inside :mod:`noelle.runtime` functions that only run in worker processes.
 """
 
-__version__ = "1.3.4"
+__version__ = "1.3.5"
 APP_NAME = "Noelle"
 APP_ID = "ai.noelle.studio"

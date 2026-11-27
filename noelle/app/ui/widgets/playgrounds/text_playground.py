@@ -489,8 +489,15 @@ class TextPlayground(QWidget):
 
     def _send_or_stop(self) -> None:
         if self._stream is not None and self._stream.running:
+            view = self._current
+            if view is not None:
+                view.set_busy(False)
+                if view.text:
+                    self.history.append({"role": "assistant", "content": view.text})
+                    self._persist("assistant", view.text)
+            self._current = None
             self._stream.cancel()
-            self.send_btn.setEnabled(False)
+            self._set_running(False)
         else:
             self.send()
 
@@ -502,6 +509,15 @@ class TextPlayground(QWidget):
         if self.voice.state not in ("idle", "recording"):
             self.voice.stop()
             self.voice_btn.setChecked(False)
+            view, self._voice_view = self._voice_view, None
+            if view is not None:
+                view.set_busy(False)
+                text = view.text or self.voice.partial_text
+                if text:
+                    view.set_text(text)
+                    self.history.append({"role": "assistant", "content": text})
+                    self._persist("assistant", text)
+            self.voice_status.setText("")
             return
         if self.recorder.recording:
             path = self.recorder.stop()
@@ -510,7 +526,7 @@ class TextPlayground(QWidget):
                 self.ctx.toast("No audio was recorded.", "warning")
                 return
             if self._stream is not None and self._stream.running:
-                self._stream.cancel()
+                self._send_or_stop()
             self._stream_messages_voice(path)
             return
 
@@ -604,6 +620,10 @@ class TextPlayground(QWidget):
         self._voice_view = None
 
     def _on_voice_failed(self, payload: dict[str, Any]) -> None:
+        if payload.get("code") == "CANCELLED":
+            self._voice_view = None
+            self.voice_status.setText("")
+            return
         message = str(payload.get("message") or "Voice turn failed.")
         hint = payload.get("hint")
         if self._voice_view is not None:
