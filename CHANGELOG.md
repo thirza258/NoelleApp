@@ -18,6 +18,8 @@ Online documentation and release notes are also available at [https://noelle.nev
 - **CLI input errors**: Malformed recipes and datasets produce a clean message and exit code instead of a traceback.
 - **Training preflight**: `noelle train doctor` verifies the packages can actually be imported, and release builds run it as a smoke test.
 - **Concurrent runs**: The Start button reflects an active run and stale dataset inspections can no longer overwrite newer results.
+- **Transformers 5 / TRL 1.x compatibility**: TrainingArguments kwargs are filtered against the installed signature (`warmup_ratio` → `warmup_steps` where removed), `SFTConfig` is built only from supported fields, and pre-wrapped PEFT models are no longer rejected by newer TRL.
+- **GPT-2/Falcon LoRA targets**: When a model has no `q_proj`-style projections, LoRA targets fall back to architecture-specific names such as `c_attn`/`c_proj`, with a visible warning.
 
 ---
 

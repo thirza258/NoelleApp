@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import inspect
 import json
 import logging
 import os
@@ -117,10 +118,16 @@ def _conversation_dataset(rows: list[dict[str, Any]]) -> Any:
     return Dataset.from_list(flat)
 
 
-def _lora_targets(model: Any, requested: list[str]) -> list[str]:
+_LORA_FALLBACKS = ("c_attn", "c_proj", "q_proj", "k_proj", "v_proj", "o_proj", "query_key_value", "dense", "Wqkv")
+
+
+def _lora_targets(model: Any, requested: list[str]) -> tuple[list[str], bool]:
     names = {name.rsplit(".", 1)[-1] for name, _module in model.named_modules()}
     selected = [name for name in requested if name in names]
-    return selected
+    if selected:
+        return selected, False
+    # GPT-2, Falcon and some older architectures use different projection names.
+    return [name for name in _LORA_FALLBACKS if name in names], True
 
 
 def _require_dependencies(config: TrainingConfig, run_id: str, store: Any, emit: Emit) -> dict[str, Any]:
@@ -264,13 +271,20 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
 
     peft_config = None
     if config.mode in ("lora", "qlora"):
-        targets = _lora_targets(model, config.lora.target_modules)
+        targets, used_fallback = _lora_targets(model, config.lora.target_modules)
         if not targets:
             emit({"type": "training.error", "code": "LORA_TARGETS",
                   "message": "None of the selected LoRA target modules exist in this model."})
             raise ConfigError(["No matching LoRA target modules."])
+        if used_fallback:
+            emit({"type": "training.warning",
+                  "message": "The model uses architecture-specific projection names; LoRA targets: "
+                             + ", ".join(targets)})
         peft_config = LoraConfig(r=config.lora.rank, lora_alpha=config.lora.alpha,
                                  lora_dropout=config.lora.dropout, target_modules=targets,
+                                 fan_in_fan_out=any(type(module).__name__ == "Conv1D"
+                                                    for name, module in model.named_modules()
+                                                    if name.rsplit(".", 1)[-1] in targets),
                                  bias=config.lora.bias, task_type=config.lora.task_type)
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
@@ -285,7 +299,7 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
         "output_dir": output_dir, "num_train_epochs": config.params.epochs,
         "per_device_train_batch_size": config.params.batch_size,
         "gradient_accumulation_steps": config.params.gradient_accumulation_steps,
-        "learning_rate": config.params.learning_rate, "warmup_ratio": config.params.warmup_ratio,
+        "learning_rate": config.params.learning_rate,
         "weight_decay": config.params.weight_decay, "lr_scheduler_type": config.params.scheduler,
         "logging_steps": max(config.params.logging_steps, 1), "save_steps": max(config.params.save_steps, 1),
         "save_total_limit": max(config.params.save_total_limit, 1), "seed": config.seed,
@@ -293,6 +307,13 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
         "fp16": dtype == torch.float16, "bf16": dtype == torch.bfloat16,
         "gradient_checkpointing": config.params.gradient_checkpointing,
     }
+    accepted = set(inspect.signature(TrainingArguments.__init__).parameters)
+    if "warmup_ratio" in accepted:
+        args_kwargs["warmup_ratio"] = config.params.warmup_ratio
+    elif "warmup_steps" in accepted:
+        # Transformers 5 removed warmup_ratio; approximate it from the expected step count.
+        args_kwargs["warmup_steps"] = max(int(round(plan.expected_steps * config.params.warmup_ratio)), 0)
+    args_kwargs = {key: value for key, value in args_kwargs.items() if key in accepted}
     optimizer = config.params.optimizer
     if optimizer == "auto":
         optimizer = "paged_adamw_8bit" if config.mode == "qlora" else "adamw_torch"
@@ -331,7 +352,7 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
                 emit({"type": "training.checkpoint", "path": str(folder), "step": state.global_step,
                       "size_bytes": size})
 
-    trainer = _build_sft_trainer(SFTTrainer, model, training_args, train_dataset, eval_dataset, peft_config,
+    trainer = _build_sft_trainer(SFTTrainer, model, training_args, train_dataset, eval_dataset, None,
                                  tokenizer, config.dataset.max_seq_length, ProgressCallback)
     store.update(run_id, status="training", pid=os.getpid())
     resume = config.resume_from or None
@@ -389,21 +410,25 @@ def _build_sft_trainer(trainer_class: Any, model: Any, training_args: Any, train
     try:
         from trl import SFTConfig
 
-        config = SFTConfig(**{key: value for key, value in vars(training_args).items()
-                              if not key.startswith("_") and value is not None}, max_length=max_seq_length)
-        return trainer_class(**common, args=config, processing_class=tokenizer)
+        accepted = set(inspect.signature(SFTConfig.__init__).parameters)
+        values = {key: value for key, value in vars(training_args).items()
+                  if not key.startswith("_") and value is not None and key in accepted}
+        values["max_length"] = max_seq_length
+        return trainer_class(**common, args=SFTConfig(**values), processing_class=tokenizer)
     except Exception:  # noqa: BLE001 - older TRL or versions without SFTConfig
         pass
-    try:
-        return trainer_class(**common, args=training_args, processing_class=tokenizer, max_length=max_seq_length)
-    except TypeError:
-        pass
-    try:
-        return trainer_class(**common, args=training_args, processing_class=tokenizer,
-                             max_seq_length=max_seq_length)
-    except TypeError:
-        return trainer_class(**common, args=training_args, tokenizer=tokenizer,
-                             max_seq_length=max_seq_length)
+    accepted = set(inspect.signature(trainer_class.__init__).parameters)
+    kwargs = {**common, "args": training_args}
+    if "processing_class" in accepted:
+        kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in accepted:
+        kwargs["tokenizer"] = tokenizer
+    if "max_length" in accepted:
+        kwargs["max_length"] = max_seq_length
+    elif "max_seq_length" in accepted:
+        kwargs["max_seq_length"] = max_seq_length
+    kwargs = {key: value for key, value in kwargs.items() if key in accepted}
+    return trainer_class(**kwargs)
 
 
 def _hardware_dict(hardware: Any) -> dict[str, Any]:

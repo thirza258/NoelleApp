@@ -115,6 +115,21 @@ def test_dependency_report_is_always_a_mapping() -> None:
         assert name in report["versions"]
 
 
+def test_lora_targets_fall_back_for_gpt2_style_models() -> None:
+    from noelle.training.trainer import _lora_targets
+
+    class FakeModel:
+        @staticmethod
+        def named_modules() -> list[tuple[str, Any]]:
+            return [("transformer.h.0.attn.c_attn", None), ("transformer.h.0.attn.c_proj", None)]
+
+    targets, fallback = _lora_targets(FakeModel(), ["q_proj", "k_proj"])
+    assert fallback is True
+    assert targets == ["c_attn", "c_proj"]
+    targets, fallback = _lora_targets(FakeModel(), ["c_attn"])
+    assert fallback is False and targets == ["c_attn"]
+
+
 # ------------------------------------------------------------------- config
 
 
