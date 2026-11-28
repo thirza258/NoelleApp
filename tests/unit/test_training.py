@@ -248,6 +248,20 @@ def test_manager_registers_full_model_and_errors(qtbot: Any, tmp_path: Path) -> 
     assert failed["error"] == "Out of memory"
 
 
+def test_manager_error_events_are_idempotent(qtbot: Any, tmp_path: Path) -> None:
+    store = TrainingStore(tmp_path / "training.db")
+    registry = _Registry()
+    manager = _manager(store, registry)
+    run = store.create(_config(tmp_path))
+    finished: list[bool] = []
+    manager.job_finished.connect(lambda _run_id, ok: finished.append(ok))
+    manager._apply_event(run["id"], {"type": "training.error", "code": "OOM",
+                                     "message": "Out of memory", "recommendations": ["Reduce batch size"]})
+    manager._apply_event(run["id"], {"type": "training.error", "code": "OOM", "message": "Out of memory"})
+    assert len(finished) == 1
+    assert "Reduce batch size" in store.get(run["id"])["error"]
+
+
 def test_manager_marks_leftover_runs_interrupted(qtbot: Any, tmp_path: Path) -> None:
     store = TrainingStore(tmp_path / "training.db")
     run = store.create(_config(tmp_path))
@@ -255,6 +269,22 @@ def test_manager_marks_leftover_runs_interrupted(qtbot: Any, tmp_path: Path) -> 
     registry = _Registry()
     _manager(store, registry)
     assert store.get(run["id"])["status"] == "interrupted"
+
+
+def test_manager_stop_uses_a_marker_file(qtbot: Any, tmp_path: Path) -> None:
+    store = TrainingStore(tmp_path / "training.db")
+    registry = _Registry()
+    manager = _manager(store, registry)
+    run = store.create(_config(tmp_path))
+    store.update(run["id"], status="training")
+    killed: list[bool] = []
+    manager._processes[run["id"]] = SimpleNamespace(kill=lambda: killed.append(True))
+    manager.stop(run["id"])
+    assert store.get(run["id"])["status"] == "stopping"
+    assert (store.run_dir(run["id"]) / "stop.requested").is_file()
+    assert killed == []
+    manager.stop(run["id"], force=True)
+    assert killed == [True]
 
 
 class _Settings:

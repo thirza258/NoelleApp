@@ -609,6 +609,7 @@ class TrainingPage(QWidget):
 
     # --------------------------------------------------------------- runs
     def refresh_runs(self, select: str | None = None) -> None:
+        self._update_start_state()
         if self.manager is None:
             self.run_hint.setText("The training service is unavailable.")
             return
@@ -654,11 +655,20 @@ class TrainingPage(QWidget):
                 item.setText(self._run_item_text(run))
                 break
 
+    def _update_start_state(self) -> None:
+        if not hasattr(self, "start_btn") or self.manager is None:
+            return
+        busy = self._starting or self.manager.has_active_run()
+        self.start_btn.setEnabled(not busy)
+        self.start_btn.setToolTip("Another training run is active. Stop it before starting a new one."
+                                  if busy and not self._starting else "Start training in a dedicated worker process.")
+
     def _on_job_added(self, run_id: str) -> None:
         self.refresh_runs(select=run_id)
         self.ctx.toast(f"Training run {run_id} started.", "info")
 
     def _on_job_updated(self, run_id: str) -> None:
+        self._update_start_state()
         self._update_run_item(run_id)
         if run_id == self._selected_run_id:
             self._render_pending = True
@@ -671,6 +681,7 @@ class TrainingPage(QWidget):
             self._render_run()
 
     def _on_job_finished(self, run_id: str, ok: bool) -> None:
+        self._update_start_state()
         self._update_run_item(run_id)
         if run_id == self._selected_run_id:
             self._render_pending = False
@@ -970,6 +981,8 @@ class TrainingPage(QWidget):
         self.form_error.clear()
 
         def done(report: DatasetReport) -> None:
+            if self.dataset_path.text().strip() != path:
+                return
             self._dataset_report = report
             self.dataset_report_label.setText(_dataset_summary(report))
             preview = []
@@ -993,6 +1006,8 @@ class TrainingPage(QWidget):
         self.studio_report_label.setText("Inspecting dataset locally…")
 
         def done(report: DatasetReport) -> None:
+            if self.studio_path.text().strip() != path:
+                return
             self._studio_report = report
             self.studio_report_label.setText(_dataset_summary(report))
             preview = [f"[{row.get('schema')}, {row.get('tokens')} tokens] {row.get('preview')}"
@@ -1024,6 +1039,8 @@ class TrainingPage(QWidget):
         self.studio_report_label.setText("Normalizing and splitting the dataset locally…")
 
         def done(prepared: Any) -> None:
+            if self.studio_path.text().strip() != path:
+                return
             self._studio_report = prepared.report
             self.studio_report_label.setText(
                 _dataset_summary(prepared.report)
@@ -1060,7 +1077,11 @@ class TrainingPage(QWidget):
             raise ConfigError(["Choose a base model or local model folder."])
         if Path(model_text).expanduser().is_dir():
             local_path = str(Path(model_text).expanduser())
-            record = next((item for item in self.ctx.registry.list_models()
+            try:
+                records = self.ctx.registry.list_models()
+            except Exception:  # noqa: BLE001 - a damaged registry must not block local folder training
+                records = []
+            record = next((item for item in records
                            if item.local_path and Path(item.local_path).expanduser() == Path(local_path)), None)
             model = ModelConfig(id=record.repo_id if record else Path(local_path).name, local_path=local_path,
                                 trust_remote_code=self.trust_remote.isChecked())
@@ -1168,7 +1189,10 @@ class TrainingPage(QWidget):
         versions = report.get("versions") or {}
         bits = " · bitsandbytes installed" if report.get("bitsandbytes") else ""
         torch_version = versions.get("torch") or "?"
-        self.env_status.setText(f"Training packages are ready (torch {torch_version}){bits}.")
+        selected = self.env_combo.currentData() or ""
+        fallback = ("The selected environment cannot import Noelle; using the bundled runtime. "
+                    if selected and self.manager.training_python() is None else "")
+        self.env_status.setText(f"{fallback}Training packages are ready (torch {torch_version}){bits}.")
 
     def _start_training(self) -> None:
         if self.manager is None or self._starting:
@@ -1197,7 +1221,7 @@ class TrainingPage(QWidget):
                 return
             finally:
                 self._starting = False
-                self.start_btn.setEnabled(True)
+                self._update_start_state()
             self.start_status.setText(f"Run {run_id} started in its own worker process.")
             self.tabs.setCurrentIndex(0)
             self.refresh_runs(select=run_id)
@@ -1215,14 +1239,14 @@ class TrainingPage(QWidget):
                 proceed()
                 return
             self._starting = False
-            self.start_btn.setEnabled(True)
+            self._update_start_state()
             self.start_status.setText("")
 
         if config.mode == "qlora" and self._hardware().device != "cuda":
             self.form_error.set_error("QLoRA needs an NVIDIA CUDA GPU (bitsandbytes NF4).",
                                       "Choose LoRA or full fine-tuning on this machine.")
             self._starting = False
-            self.start_btn.setEnabled(True)
+            self._update_start_state()
             self.start_status.setText("")
             return
         runner().submit(self.manager.dependencies, on_result=checked,
@@ -1230,7 +1254,7 @@ class TrainingPage(QWidget):
 
     def _start_error(self, message: str) -> None:
         self._starting = False
-        self.start_btn.setEnabled(True)
+        self._update_start_state()
         self.start_status.setText("")
         self.form_error.set_error(f"Could not check the training environment: {message}")
 

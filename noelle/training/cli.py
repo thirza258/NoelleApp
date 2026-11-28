@@ -51,6 +51,9 @@ def add_training_arguments(parser: argparse.ArgumentParser) -> None:
     status.add_argument("run_id")
     status.add_argument("--json", action="store_true")
 
+    doctor = sub.add_parser("doctor", help="check that the training packages are installed")
+    doctor.add_argument("--json", action="store_true")
+
 
 def _human_event(event: dict[str, Any]) -> str | None:
     kind = event.get("type")
@@ -86,8 +89,12 @@ def _print_plan(plan: Any) -> None:
 
 
 def _run(args: argparse.Namespace) -> int:
-    config = TrainingConfig.from_file(args.config)
-    config.validate()
+    try:
+        config = TrainingConfig.from_file(args.config)
+        config.validate()
+    except Exception as exc:  # noqa: BLE001 - hand-edited recipes are user input
+        print(f"Invalid training configuration: {exc}", file=sys.stderr)
+        return 2
     if args.resume:
         config.resume_from = str(args.resume)
     store = TrainingStore()
@@ -136,11 +143,15 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _prepare(args: argparse.Namespace) -> int:
-    report = analyze_dataset(args.dataset, max_seq_length=args.max_seq_length,
-                             validation_ratio=args.validation_ratio)
-    prepared = prepare_dataset(args.dataset, args.output, max_seq_length=args.max_seq_length,
-                               validation_ratio=args.validation_ratio, dedupe=not args.no_dedupe,
-                               trim_long=args.trim_long)
+    try:
+        report = analyze_dataset(args.dataset, max_seq_length=args.max_seq_length,
+                                 validation_ratio=args.validation_ratio)
+        prepared = prepare_dataset(args.dataset, args.output, max_seq_length=args.max_seq_length,
+                                   validation_ratio=args.validation_ratio, dedupe=not args.no_dedupe,
+                                   trim_long=args.trim_long)
+    except Exception as exc:  # noqa: BLE001 - malformed datasets are user input
+        print(f"Could not prepare the dataset: {exc}", file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(prepared.to_dict(), indent=2, default=str))
         return 0
@@ -154,11 +165,15 @@ def _prepare(args: argparse.Namespace) -> int:
 
 
 def _plan(args: argparse.Namespace) -> int:
-    config = TrainingConfig.from_file(args.config)
-    config.validate()
+    try:
+        config = TrainingConfig.from_file(args.config)
+        config.validate()
+        report = analyze_dataset(config.dataset.path, max_seq_length=config.dataset.max_seq_length,
+                                 validation_ratio=config.dataset.validation_ratio)
+    except Exception as exc:  # noqa: BLE001 - invalid recipes/datasets are user input
+        print(f"Could not plan this run: {exc}", file=sys.stderr)
+        return 2
     hardware = hardware_info()
-    report = analyze_dataset(config.dataset.path, max_seq_length=config.dataset.max_seq_length,
-                             validation_ratio=config.dataset.validation_ratio)
     plan = estimate_plan(config, hardware, dataset_samples=report.valid,
                          dataset_avg_tokens=int(report.avg_tokens))
     if args.json:
@@ -200,6 +215,37 @@ def _list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _doctor(args: argparse.Namespace) -> int:
+    import importlib
+
+    from noelle.training.trainer import dependency_report
+
+    report = dependency_report()
+    load_errors: dict[str, str] = {}
+    for name in ("torch", "transformers", "datasets", "accelerate", "peft", "trl"):
+        try:
+            importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 - report the exact import problem
+            load_errors[name] = str(exc)
+    report["load_errors"] = load_errors
+    compatible = report["compatible"] and not load_errors
+    report["compatible"] = compatible
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+    elif compatible:
+        versions = ", ".join(f"{name} {version}" for name, version in report["versions"].items() if version)
+        print(f"Training packages are ready: {versions}")
+        if not report["bitsandbytes"]:
+            print("bitsandbytes is not installed; LoRA and full fine-tuning are available, QLoRA is not.")
+    else:
+        problems = list(report["missing"]) + [f"{name} ({error})" for name, error in load_errors.items()
+                                             if name not in report["missing"]]
+        print("Training packages are not usable: " + ", ".join(problems), file=sys.stderr)
+        print("Create an environment with the training profile, or install them for this Python.",
+              file=sys.stderr)
+    return 0 if compatible else 1
+
+
 def _status(args: argparse.Namespace) -> int:
     store = TrainingStore()
     run = store.get(args.run_id)
@@ -233,9 +279,11 @@ def main(args: argparse.Namespace) -> int:
         return _plan(args)
     if command == "merge":
         return _merge(args)
+    if command == "doctor":
+        return _doctor(args)
     if command == "list":
         return _list(args)
     if command == "status":
         return _status(args)
-    print("Usage: noelle train {run,prepare,plan,merge,list,status}", file=sys.stderr)
+    print("Usage: noelle train {run,prepare,plan,merge,doctor,list,status}", file=sys.stderr)
     return 1

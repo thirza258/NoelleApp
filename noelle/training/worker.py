@@ -52,6 +52,24 @@ def main(args: Any) -> int:
 
     run_id = str(args.run_id)
     store = TrainingStore()
+
+    def watch_stop_file() -> None:
+        marker = store.run_dir(run_id) / "stop.requested"
+        while not stop_event.wait(1.0):
+            try:
+                if marker.exists():
+                    try:
+                        marker.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    emit({"type": "training.warning",
+                          "message": "Stop requested; finishing the current step."})
+                    stop_event.set()
+                    return
+            except OSError:
+                return
+
+    threading.Thread(target=watch_stop_file, name="training-stop-watch", daemon=True).start()
     try:
         config = TrainingConfig.from_file(Path(args.config))
         config.validate()
@@ -65,8 +83,10 @@ def main(args: Any) -> int:
     except TrainingDependencyError:
         return 2
     except ConfigError as exc:
-        store.update(run_id, status="failed", error=str(exc))
-        emit({"type": "training.error", "code": "CONFIG", "message": str(exc)})
+        run = store.get(run_id) or {}
+        if run.get("status") not in ("failed", "oom", "stopped", "completed"):
+            store.update(run_id, status="failed", error=str(exc))
+            emit({"type": "training.error", "code": "CONFIG", "message": str(exc)})
         return 2
     except Exception as exc:  # noqa: BLE001 - report every failure to the desktop shell
         detail = traceback.format_exc()

@@ -9,6 +9,18 @@ Online documentation and release notes are also available at [https://noelle.nev
 
 ---
 
+## [1.4.1] - 2026-11-28
+
+### Fixed
+- **Windows graceful stop**: Training runs now stop through a worker-polled marker file instead of `QProcess.terminate()` (a hard kill on Windows), so stopping after the current step still saves a checkpoint.
+- **Early stop checks**: Dataset preparation, planning and tokenizer setup now abort cleanly when Stop is requested before the first optimizer step.
+- **Actionable OOM errors**: Out-of-memory failures include the worker's batch/sequence/QLoRA recommendations in the run error.
+- **CLI input errors**: Malformed recipes and datasets produce a clean message and exit code instead of a traceback.
+- **Training preflight**: `noelle train doctor` verifies the packages can actually be imported, and release builds run it as a smoke test.
+- **Concurrent runs**: The Start button reflects an active run and stale dataset inspections can no longer overwrite newer results.
+
+---
+
 ## [1.4.0] - 2026-11-28
 
 ### Added

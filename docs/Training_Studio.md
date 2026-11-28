@@ -41,6 +41,7 @@ split. Empty training splits fail with a visible error.
 noelle train prepare --dataset data.jsonl --output prepared/
 noelle train plan --config recipe.yaml
 noelle train run --config recipe.yaml
+noelle train doctor
 noelle train list
 noelle train status <run-id>
 ```

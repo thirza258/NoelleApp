@@ -88,8 +88,8 @@ if IS_MAC:
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": "Noelle AI Studio",
-            "CFBundleShortVersionString": "1.4.0",
-            "CFBundleVersion": "1.4.0",
+            "CFBundleShortVersionString": "1.4.1",
+            "CFBundleVersion": "1.4.1",
             "LSApplicationCategoryType": "public.app-category.developer-tools",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "13.0",

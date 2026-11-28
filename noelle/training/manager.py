@@ -139,6 +139,9 @@ class TrainingManager(QObject):
     def is_active(self, run_id: str) -> bool:
         return run_id in self._processes
 
+    def has_active_run(self) -> bool:
+        return bool(self._processes)
+
     def start(self, config: TrainingConfig, *, run_id: str | None = None, resume: bool = False) -> str:
         config.validate()
         if self._processes:
@@ -166,14 +169,25 @@ class TrainingManager(QObject):
     def stop(self, run_id: str, *, force: bool = False) -> None:
         process = self._processes.get(run_id)
         if process is not None:
+            run = self.store.get(run_id) or {}
+            if run.get("status") in ("completed", "failed", "oom", "stopped"):
+                return
             self.store.update(run_id, status="stopping")
-            try:
-                if force:
+            if force:
+                try:
                     process.kill()
-                else:
-                    process.terminate()
-            except RuntimeError:
-                pass
+                except RuntimeError:
+                    pass
+            else:
+                # The worker polls this marker, so Stop is graceful on Windows too
+                # (QProcess.terminate() is a hard TerminateProcess there).
+                try:
+                    (self.store.run_dir(run_id) / "stop.requested").write_text("stop\n", encoding="utf-8")
+                except OSError:
+                    try:
+                        process.terminate()
+                    except RuntimeError:
+                        pass
             self.job_updated.emit(run_id)
             return
         self.store.update(run_id, status="stopped", finished_at=time.time())
@@ -267,18 +281,32 @@ class TrainingManager(QObject):
         return usable
 
     def shutdown(self) -> None:
-        for process in list(self._processes.values()):
+        for run_id, process in list(self._processes.items()):
+            try:
+                (self.store.run_dir(run_id) / "stop.requested").write_text("stop\n", encoding="utf-8")
+            except OSError:
+                pass
             try:
                 if process.state() != QProcess.ProcessState.NotRunning:
-                    process.terminate()
                     if not process.waitForFinished(5000):
-                        process.kill()
-                        process.waitForFinished(2000)
+                        process.terminate()
+                        if not process.waitForFinished(2000):
+                            process.kill()
+                            process.waitForFinished(2000)
+                if process.state() == QProcess.ProcessState.NotRunning:
+                    self._processes.pop(run_id, None)
+                    run = self.store.get(run_id) or {}
+                    if run.get("status") in ("queued", "preparing", "training", "stopping"):
+                        self.store.update(run_id, status="stopped", finished_at=time.time())
             except RuntimeError:
                 pass
 
     # -------------------------------------------------------------- internal
     def _spawn(self, run_id: str, config_path: Path) -> QProcess:
+        try:
+            (self.store.run_dir(run_id) / "stop.requested").unlink(missing_ok=True)
+        except OSError:
+            pass
         process = QProcess(self)
         process.setProcessEnvironment(self._environment())
         command, args = self._command(run_id, config_path)
@@ -365,8 +393,15 @@ class TrainingManager(QObject):
             self._append_log(run_id, "WARNING: " + str(event.get("message") or ""))
             self.job_updated.emit(run_id)
         elif kind == "training.error":
+            run = self.store.get(run_id) or {}
+            if run.get("status") in ("completed", "failed", "oom", "stopped"):
+                return
+            message = str(event.get("message") or "Training failed.")
+            recommendations = event.get("recommendations") or []
+            if recommendations:
+                message += " Recommended: " + "; ".join(str(item) for item in recommendations)
             self.store.update(run_id, status="oom" if event.get("code") == "OOM" else "failed",
-                              error=str(event.get("message") or "Training failed."), finished_at=time.time())
+                              error=message, finished_at=time.time())
             self.job_finished.emit(run_id, False)
         elif kind in ("training.stopped", "training.paused"):
             self.store.update(run_id, status="stopped", output_path=event.get("output_path"),

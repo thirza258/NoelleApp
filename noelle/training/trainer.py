@@ -143,6 +143,21 @@ def _require_dependencies(config: TrainingConfig, run_id: str, store: Any, emit:
     return report
 
 
+def _stop_requested(stop_event: Any) -> bool:
+    try:
+        return bool(stop_event.is_set())
+    except AttributeError:
+        return False
+
+
+def _abort_if_stopped(stop_event: Any, run_id: str, store: Any, emit: Emit) -> bool:
+    if not _stop_requested(stop_event):
+        return False
+    store.update(run_id, status="stopped", finished_at=time.time())
+    emit({"type": "training.stopped", "run_id": run_id})
+    return True
+
+
 def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
                  stop_event: Any) -> dict[str, Any]:
     """Run one training job. Emits JSON-serialisable events; returns the final manifest."""
@@ -166,11 +181,15 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
     if getattr(tokenizer, "pad_token", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
     emit({"type": "training.preparing", "stage": "tokenizer"})
+    if _abort_if_stopped(stop_event, run_id, store, emit):
+        return {"run_id": run_id, "status": "stopped"}
 
     # 2. Dataset pipeline (artifacts stay inside the run folder).
     config.dataset.prepared_dir = str(store.dataset_dir(run_id))
     prepared = _prepare(config, emit, tokenizer=tokenizer)
     store.update(run_id, dataset_sha=prepared.report.sha256, status="preparing")
+    if _abort_if_stopped(stop_event, run_id, store, emit):
+        return {"run_id": run_id, "status": "stopped"}
     train_rows = _load_rows(prepared.train_path)
     validation_rows = _load_rows(prepared.validation_path)
     if not train_rows:
@@ -201,6 +220,8 @@ def run_training(config: TrainingConfig, run_id: str, store: Any, emit: Emit,
     if plan.risk == "UNSUPPORTED":
         emit({"type": "training.warning", "message": "The plan is estimated to exceed available memory.",
               "plan": plan.to_dict()})
+    if _abort_if_stopped(stop_event, run_id, store, emit):
+        return {"run_id": run_id, "status": "stopped"}
 
     # 4. Training dependencies were verified before any model or network access.
 

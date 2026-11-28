@@ -81,6 +81,7 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then BIN=dist/Noelle/Noelle.exe; else BIN=dist/Noelle/Noelle; fi
           "$BIN" download --help
           "$BIN" env list
+          "$BIN" train doctor
           "$BIN" eval --list-datasets | grep "builtin:reasoning-math"   # datasets bundled as package data
           "$BIN" mcp --print-config | grep "mcpServers"
       - uses: actions/upload-artifact@v4
