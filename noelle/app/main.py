@@ -66,8 +66,11 @@ def build_context():  # noqa: ANN201 - returns AppContext
     hardware = HardwareManager(runtime)
     downloads = DownloadManager(settings, registry)
     server = ServerManager(settings, runtime)
+    from noelle.training.manager import TrainingManager
+
+    training = TrainingManager(settings, registry)
     return AppContext(settings=settings, registry=registry, hf=HFClient(settings.get("hub.endpoint")),
-                      runtime=runtime, hardware=hardware, downloads=downloads, server=server)
+                      runtime=runtime, hardware=hardware, downloads=downloads, server=server, training=training)
 
 
 def _clean_stale_token_handoffs() -> None:

@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         ctx.toast = self.toast
         ctx.open_model = self.open_model
         ctx.navigate = self.navigate
+        ctx.open_settings = self.open_settings
 
         root = QWidget()
         root.setObjectName("AppRoot")
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         from noelle.app.ui.pages.model_detail_page import ModelDetailPage
         from noelle.app.ui.pages.server_page import ServerPage
         from noelle.app.ui.pages.storage_page import StoragePage
+        from noelle.app.ui.pages.training_page import TrainingPage
         from noelle.app.ui.pages.workflow_page import WorkflowPage
 
         self.pages: dict[str, QWidget] = {
@@ -84,6 +86,7 @@ class MainWindow(QMainWindow):
             "workspace": ModelDetailPage(ctx),
             "knowledge": KnowledgePage(ctx),
             "evaluate": EvaluatePage(ctx),
+            "training": TrainingPage(ctx),
             "workflow": WorkflowPage(ctx),
             "compare": ComparativePage(ctx),
             "storage": StoragePage(ctx),
@@ -91,6 +94,7 @@ class MainWindow(QMainWindow):
         }
         for page in self.pages.values():
             self.stack.addWidget(page)
+        ctx.extras["evaluate_page"] = self.pages["evaluate"]
         self.pages["discover"].model_selected.connect(self.open_model)  # type: ignore[attr-defined]
         self.pages["knowledge"].collections_changed.connect(self._knowledge_changed)  # type: ignore[attr-defined]
 
@@ -312,13 +316,25 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-        log.info("shutting down: %d active download(s), server=%s, runtime=%s",
-                 len(active), self.ctx.server.state, self.ctx.runtime.state)
+        training = self.ctx.training.active_runs() if self.ctx.training is not None else []
+        if training:
+            answer = QMessageBox.question(
+                self, "Stop training and quit?",
+                f"{len(training)} training run(s) are active. They will be stopped after the current step and can be "
+                "resumed from their last checkpoint.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+        log.info("shutting down: %d active download(s), %d training run(s), server=%s, runtime=%s",
+                 len(active), len(training), self.ctx.server.state, self.ctx.runtime.state)
         for page in self.pages.values():
             shutdown = getattr(page, "shutdown", None)
             if callable(shutdown):
                 shutdown()
         self.ctx.downloads.shutdown()
+        if self.ctx.training is not None:
+            self.ctx.training.shutdown()
         self.ctx.server.stop()
         self.ctx.hardware.stop()
         self.ctx.runtime.stop()

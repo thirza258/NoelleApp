@@ -22,7 +22,7 @@ hiddenimports = (
     + collect_submodules("zmq")
     + collect_submodules("uvicorn")
     + ["keyring.backends.macOS", "keyring.backends.Windows", "keyring.backends.SecretService",
-       "sentence_transformers", "pypdf", "docx", "sqlite_vec", "peft", "diffusers"]
+       "sentence_transformers", "pypdf", "docx", "sqlite_vec", "peft", "trl", "datasets", "diffusers"]
 )
 if sys.platform == "win32":
     hiddenimports += collect_submodules("win32ctypes")  # keyring's Windows Credential Manager client
@@ -40,7 +40,7 @@ if IS_MAC:
 # packages that read their own version metadata at import time
 for package in ("transformers", "huggingface_hub", "tokenizers", "safetensors", "accelerate", "torch", "tqdm",
                 "regex", "requests", "packaging", "filelock", "numpy", "pyyaml", "diffusers", "peft",
-                "sentence-transformers", "keyring"):
+                "sentence-transformers", "keyring", "trl", "datasets"):
     try:
         datas += copy_metadata(package)
     except Exception:
@@ -88,8 +88,8 @@ if IS_MAC:
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": "Noelle AI Studio",
-            "CFBundleShortVersionString": "1.3.5",
-            "CFBundleVersion": "1.3.5",
+            "CFBundleShortVersionString": "1.4.0",
+            "CFBundleVersion": "1.4.0",
             "LSApplicationCategoryType": "public.app-category.developer-tools",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "13.0",

@@ -9,6 +9,24 @@ Online documentation and release notes are also available at [https://noelle.nev
 
 ---
 
+## [1.4.0] - 2026-11-28
+
+### Added
+- **Training Studio**: A dedicated page for local dataset preparation, hardware-aware planning and LoRA/QLoRA/full SFT fine-tuning, with a run dashboard, loss chart, checkpoints and manifests.
+- **Dataset Studio**: Local JSONL/JSON/CSV/Parquet/TXT/Markdown normalization into ChatML or plain text, duplicate detection, validation split, token statistics and short previews. Dataset samples are never written to logs or manifests.
+- **Hardware Planner**: VRAM/RAM/disk/time estimates with SAFE/WARNING/HIGH RISK/UNSUPPORTED verdicts, conservative recommendations and one-click application, including QLoRA guidance for CUDA GPUs.
+- **Dedicated Training Worker**: Each run executes in its own process (`noelle train-worker`) with newline-delimited JSON progress, a persistent SQLite run store, checkpoints, graceful stop, resume and OOM recommendations.
+- **Training Recipes and CLI**: Save/load YAML or JSON recipes; `noelle train run|prepare|plan|list|status` for headless workflows.
+- **Training Environment Profile**: Isolated venv profile (`training`, plus `cuda-quant` for QLoRA) with dependency reporting, and optional per-run interpreter selection.
+- **Library Integration**: Completed full models and LoRA adapters are registered in the local model registry; adapters can be merged into standalone checkpoints for inference and evaluation.
+- **Evaluation Handoff**: Finished full models can be selected directly in the Evaluation Lab; merged adapters are registered as local models.
+
+### Notes
+- The MVP trains text-generation SFT models only. DPO/KTO, MLX training, synthetic dataset generation, multi-GPU/distributed training and autonomous training agents are intentionally out of scope for this release.
+- Training and datasets stay local. Nothing is uploaded to Hugging Face or any other service; exporting a model is always an explicit user action.
+
+---
+
 ## [1.2.0] - 2026-11-26
 
 ### Added

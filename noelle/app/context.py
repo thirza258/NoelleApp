@@ -23,9 +23,11 @@ class AppContext:
     hardware: Any  # HardwareManager
     downloads: Any  # DownloadManager
     server: Any  # ServerManager
+    training: Any = None  # TrainingManager
     toast: Callable[[str, str], None] = lambda _text, _kind="info": None
     open_model: Callable[[Any], None] = lambda _model: None
     navigate: Callable[[str], None] = lambda _page: None
+    open_settings: Callable[[], None] = lambda: None
     extras: dict[str, Any] = field(default_factory=dict)
 
     def compat(self, model: Any) -> Compatibility:

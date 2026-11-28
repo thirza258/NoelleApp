@@ -17,6 +17,7 @@ Version 1.0.0 replaces the previous Django + React web app that lived in this re
 | **Discover** | Live Hub catalog by modality (text, vision, audio, diffusion, embeddings) with search, sorting and infinite scroll. A trending hero collapses (250 ms) when you scroll, so the grid gets the full width. Every card shows a 0–100 compatibility score with a badge: **green** runs natively, **yellow** needs a 4-bit build, **red** CPU fallback or too large. |
 | **Workspace** | **Analysis** tab: the score broken into memory fit, runtime, precision, context and trust; "How should I run this?" — every build (FP16, INT8, NF4, AWQ, GPTQ, 4-bit MLX, GGUF) with memory, fit, quality, speed (measured on this machine when available, otherwise a labelled estimate) and whether it is ready, needs a one-time build, an optional component or cannot run here; the largest context that fits; capabilities (inputs/outputs, chat template, tool calling, languages, licence, remote code). **Runtime profiles** (Balanced, Quality, Fast, Low memory, Max context) pick the build for you. Repositories with their own Python code show the files and offer *Allow once*, *Trust repository* or *Trust publisher*. Plus provenance (revision, download date), resumable verified downloads and playgrounds for chat, vision Q&A, detection, classification, speech recognition, speech synthesis, text-to-image and embeddings. |
 | **Evaluate** | The Evaluation Lab: run built-in or your own JSONL datasets (reasoning, JSON output, instruction following, sentiment, coding, Indonesian Q&A, EN→ID translation, chat latency) against several local models. Cases are scored locally and deterministically (exact, contains, regex, numeric, choice, JSON checks — generated code is never executed). Every run is saved as an experiment with the dataset digest, generation settings, hardware and each model's revision, with history, JSON/Markdown export and a performance matrix built from your own runs. |
+| **Training** | Local Training Studio: normalize JSONL/JSON/CSV/Parquet/TXT/Markdown data, inspect duplicates and token statistics, and fine-tune with LoRA, QLoRA (CUDA) or full SFT. A hardware planner estimates VRAM/RAM/time and risk before you start. Runs execute in a dedicated worker process with live loss, checkpoints, graceful stop/resume, recipes, manifests and `noelle train` CLI commands. Full models and merged adapters are registered in the library and can go straight to Evaluate. Nothing is uploaded. |
 | **Knowledge** | RAG Studio: knowledge bases built from PDF, DOCX, Markdown, text and code files, with token-aware chunks (512/64 by default, adjustable per base), on-device embeddings and sqlite-vec search with citations. A retrieval **evaluation** tab scores a set of questions (hit rate, recall, precision, MRR and nDCG at k) and compares two bases side by side — e.g. two chunk sizes or two embedding models. Chat in the Workspace grounds answers in a base, optionally with web results from your own SearXNG instance. |
 | **Optimize** | One-click 4-bit quantization: MLX on Apple Silicon; AWQ, GPTQ and bitsandbytes NF4 on CUDA; GGUF with llama.cpp tools. LoRA adapters attach to a loaded model and switch without reloading the base weights. |
 | **Compare** | 1, 2 or 4 views with a broadcast prompt. A sequential GPU queue runs View 1 → View 4 and either keeps every model loaded (retain) or unloads each before the next (hot-swap, with `gc.collect()` and the cache flushed). Produces a benchmark matrix (TTFT, tok/s, peak memory, precision) with JSON and Markdown export; runs also appear in the Evaluation Lab history. |
@@ -28,7 +29,7 @@ Version 1.0.0 replaces the previous Django + React web app that lived in this re
 
 ```
 PySide6 desktop shell  (never imports torch)
- ├─ Discover · Mission · Workspace · Knowledge · Evaluate · Compare · Storage · API pages
+ ├─ Discover · Mission · Workspace · Knowledge · Evaluate · Training · Compare · Storage · API pages
  ├─ model intelligence (pure Python, shared with CLI/MCP): capability registry · runtime/quantization advisor
  ├─ services: HF client (keyring token) · hardware telemetry · download manager · registry (SQLite WAL)
  └─ IPC: ZeroMQ DEALER on a dedicated QThread
@@ -42,6 +43,7 @@ Inference worker  (`noelle worker`, separate process)
 
 `noelle server`    FastAPI/uvicorn, OpenAI API → same worker
 `noelle download`  one child per repo: JSON-line progress, retries, SHA-256 verification
+`noelle train`     dataset preparation, hardware planning and local SFT runs (recipes/JSON events)
 ```
 
 * **Fault isolation.** If a memory error happens inside the worker, the allocator cache is flushed and the request

@@ -9,6 +9,7 @@
 ``noelle eval``       Evaluation Lab from the terminal (thresholds/baselines for CI)
 ``noelle analyze``    compatibility score and run options for a Hub repository
 ``noelle run``        one prompt to a local model, streamed to stdout
+``noelle train``      local fine-tuning: prepare data, plan, run and inspect runs
 
 A frozen (PyInstaller) build re-executes itself with these subcommands, so every
 child process is the same binary.
@@ -66,6 +67,17 @@ def build_parser() -> argparse.ArgumentParser:
     lab_cli.add_analyze_arguments(sub.add_parser("analyze", help="score how well a Hub model runs on this machine"))
     lab_cli.add_run_arguments(sub.add_parser("run", help="send one prompt to a local model and stream the reply"))
 
+    from noelle.training import cli as training_cli
+
+    training_cli.add_training_arguments(
+        sub.add_parser("train", help="prepare datasets, plan and run local fine-tuning"))
+
+    train_worker = sub.add_parser("train-worker")  # spawned per run; hidden from --help
+    from noelle.training import worker as training_worker
+
+    training_worker.add_arguments(train_worker)
+    sub._choices_actions = [a for a in sub._choices_actions if a.dest != "train-worker"]
+
     mcp = sub.add_parser("mcp", help="run the Model Context Protocol server on stdio")
     mcp.add_argument("--api-url", default=None,
                      help="Noelle API server base URL (default: http://<server.host>:<server.port> from settings)")
@@ -106,13 +118,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     commands = {"ui", "worker", "server", "download", "env", "setup", "pyrun", "mcp", "eval", "analyze", "run", "workflow",
-                "-h", "--help"}
+                "train", "train-worker", "-h", "--help"}
     if not argv or argv[0] not in commands:
         # Default to the UI; leave Qt's own arguments (e.g. -platform offscreen) for QApplication.
         from noelle.app.main import run
 
         return run(argv)
-    if argv[0] not in ("worker", "server", "download", "pyrun", "ui", "setup"):
+    if argv[0] not in ("worker", "server", "download", "pyrun", "ui", "setup", "train-worker"):
         _attach_windows_console()
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -163,6 +175,14 @@ def main(argv: list[str] | None = None) -> int:
         from noelle.workflow import cli as workflow_cli
 
         return workflow_cli.main(args)
+    if args.command == "train":
+        from noelle.training import cli as training_cli
+
+        return training_cli.main(args)
+    if args.command == "train-worker":
+        from noelle.training import worker as training_worker
+
+        return training_worker.main(args)
     parser.print_help()
     return 1
 

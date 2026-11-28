@@ -107,6 +107,9 @@
   "quantization": {
     "llama_cpp_dir": null
   },
+  "training": {
+    "environment": null
+  },
   "setup": {
     "completed": false,
     "version": null
